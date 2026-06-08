@@ -1,0 +1,20 @@
+site_name: Authentik Envoy Operator
+site_description: Kubernetes operator for Authentik OIDC + Envoy Gateway SecurityPolicy automation
+repo_url: https://github.com/authentik-envoy-operator/authentik-envoy-operator
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: deep purple
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Examples: examples.md
+  - CRD Reference: crd-reference.md
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - admonition
