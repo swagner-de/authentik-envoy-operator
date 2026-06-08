@@ -397,21 +397,27 @@ func (r *OIDCPolicyReconciler) cleanup(ctx context.Context, policy *v1alpha1.OID
 	// Delete policy bindings
 	for _, bindingID := range policy.Status.Authentik.PolicyBindingIDs {
 		if err := apiClient.DeletePolicyBinding(ctx, bindingID); err != nil {
-			log.Error(err, "failed to delete policy binding", "id", bindingID)
+			if !isNotFound(err) {
+				return fmt.Errorf("deleting policy binding %s: %w", bindingID, err)
+			}
 		}
 	}
 
 	// Delete application
 	if policy.Status.Authentik.ApplicationSlug != "" {
 		if err := apiClient.DeleteApplication(ctx, policy.Status.Authentik.ApplicationSlug); err != nil {
-			log.Error(err, "failed to delete application", "slug", policy.Status.Authentik.ApplicationSlug)
+			if !isNotFound(err) {
+				return fmt.Errorf("deleting application %s: %w", policy.Status.Authentik.ApplicationSlug, err)
+			}
 		}
 	}
 
 	// Delete provider
 	if policy.Status.Authentik.ProviderID > 0 {
 		if err := apiClient.DeleteProvider(ctx, policy.Status.Authentik.ProviderID); err != nil {
-			log.Error(err, "failed to delete provider", "id", policy.Status.Authentik.ProviderID)
+			if !isNotFound(err) {
+				return fmt.Errorf("deleting provider %d: %w", policy.Status.Authentik.ProviderID, err)
+			}
 		}
 	}
 
@@ -444,4 +450,9 @@ func stringSliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func isNotFound(err error) bool {
+	var apiErr *authentik.APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == 404
 }
