@@ -14,10 +14,20 @@ spec:
     singular: oidcpolicy
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.providerRef.name
+      name: Provider
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OIDCPolicy is the Schema for the oidcpolicies API
+        description: OIDCPolicy defines OIDC protection for one or more HTTPRoutes.
         properties:
           apiVersion:
             description: |-
@@ -37,27 +47,110 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of OIDCPolicy
+            description: OIDCPolicySpec defines the desired OIDC protection for HTTPRoutes.
             properties:
-              foo:
-                description: foo is an example field of OIDCPolicy. Edit oidcpolicy_types.go
-                  to remove/update
-                type: string
+              oidc:
+                description: OIDC defines the authentication configuration.
+                properties:
+                  allowedGroups:
+                    description: |-
+                      AllowedGroups are the Authentik groups permitted to access the protected routes.
+                      At least one group is required.
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                  cookieConfig:
+                    description: CookieConfig defines cookie behavior.
+                    properties:
+                      domain:
+                        description: Domain sets the cookie domain. Empty means the
+                          browser uses the request domain.
+                        type: string
+                      namePrefix:
+                        description: NamePrefix is the prefix for cookie names. Defaults
+                          to the OIDCPolicy name.
+                        type: string
+                      sameSite:
+                        default: Lax
+                        description: SameSite attribute for cookies.
+                        enum:
+                        - Lax
+                        - Strict
+                        - None
+                        type: string
+                    type: object
+                  forwardAccessToken:
+                    default: true
+                    description: ForwardAccessToken passes the access token to upstream
+                      services.
+                    type: boolean
+                  redirectURL:
+                    description: |-
+                      RedirectURL overrides the auto-derived redirect URL.
+                      If empty, it is derived from the first HTTPRoute's hostname.
+                    type: string
+                  scopes:
+                    default:
+                    - openid
+                    - profile
+                    description: Scopes to request from the OIDC provider.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - allowedGroups
+                type: object
+              providerRef:
+                description: ProviderRef references a cluster-scoped AuthentikProvider.
+                properties:
+                  name:
+                    description: Name of the AuthentikProvider resource.
+                    type: string
+                required:
+                - name
+                type: object
+              targetRefs:
+                description: TargetRefs identifies the HTTPRoutes to protect (same
+                  namespace).
+                items:
+                  description: TargetRef identifies an HTTPRoute by name (same namespace
+                    as OIDCPolicy).
+                  properties:
+                    name:
+                      description: Name of the HTTPRoute.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+            required:
+            - oidc
+            - providerRef
+            - targetRefs
             type: object
           status:
-            description: status defines the observed state of OIDCPolicy
+            description: OIDCPolicyStatus defines the observed state.
             properties:
+              authentik:
+                description: Authentik tracks created Authentik resources.
+                properties:
+                  applicationID:
+                    type: string
+                  applicationSlug:
+                    type: string
+                  clientID:
+                    type: string
+                  policyBindingIDs:
+                    items:
+                      type: string
+                    type: array
+                  providerID:
+                    type: integer
+                type: object
               conditions:
-                description: |-
-                  conditions represent the current state of the OIDCPolicy resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                description: Conditions represent the latest available observations.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -113,12 +206,25 @@ spec:
                   - type
                   type: object
                 type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
+              secretName:
+                description: SecretName is the name of the Secret containing the OIDC
+                  client credentials.
+                type: string
+              securityPolicies:
+                description: SecurityPolicies lists the created SecurityPolicy resources.
+                items:
+                  description: SecurityPolicyRef tracks a created SecurityPolicy.
+                  properties:
+                    name:
+                      type: string
+                    targetRoute:
+                      type: string
+                  required:
+                  - name
+                  - targetRoute
+                  type: object
+                type: array
             type: object
-        required:
-        - spec
         type: object
     served: true
     storage: true

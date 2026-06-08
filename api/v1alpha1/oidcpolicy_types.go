@@ -1,89 +1,126 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// OIDCPolicySpec defines the desired state of OIDCPolicy
-type OIDCPolicySpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of OIDCPolicy. Edit oidcpolicy_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+// TargetRef identifies an HTTPRoute by name (same namespace as OIDCPolicy).
+type TargetRef struct {
+	// Name of the HTTPRoute.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
 }
 
-// OIDCPolicyStatus defines the observed state of OIDCPolicy.
+// ProviderRef references a cluster-scoped AuthentikProvider.
+type ProviderRef struct {
+	// Name of the AuthentikProvider resource.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+}
+
+// CookieConfig defines cookie settings for the OIDC session.
+type CookieConfig struct {
+	// NamePrefix is the prefix for cookie names. Defaults to the OIDCPolicy name.
+	NamePrefix string `json:"namePrefix,omitempty"`
+
+	// Domain sets the cookie domain. Empty means the browser uses the request domain.
+	Domain string `json:"domain,omitempty"`
+
+	// SameSite attribute for cookies.
+	// +kubebuilder:default="Lax"
+	// +kubebuilder:validation:Enum=Lax;Strict;None
+	SameSite string `json:"sameSite,omitempty"`
+}
+
+// OIDCConfig defines the OIDC authentication settings.
+type OIDCConfig struct {
+	// AllowedGroups are the Authentik groups permitted to access the protected routes.
+	// At least one group is required.
+	// +kubebuilder:validation:MinItems=1
+	AllowedGroups []string `json:"allowedGroups"`
+
+	// Scopes to request from the OIDC provider.
+	// +kubebuilder:default={"openid","profile"}
+	Scopes []string `json:"scopes,omitempty"`
+
+	// ForwardAccessToken passes the access token to upstream services.
+	// +kubebuilder:default=true
+	ForwardAccessToken bool `json:"forwardAccessToken,omitempty"`
+
+	// RedirectURL overrides the auto-derived redirect URL.
+	// If empty, it is derived from the first HTTPRoute's hostname.
+	RedirectURL string `json:"redirectURL,omitempty"`
+
+	// CookieConfig defines cookie behavior.
+	CookieConfig *CookieConfig `json:"cookieConfig,omitempty"`
+}
+
+// OIDCPolicySpec defines the desired OIDC protection for HTTPRoutes.
+type OIDCPolicySpec struct {
+	// ProviderRef references a cluster-scoped AuthentikProvider.
+	// +kubebuilder:validation:Required
+	ProviderRef ProviderRef `json:"providerRef"`
+
+	// TargetRefs identifies the HTTPRoutes to protect (same namespace).
+	// +kubebuilder:validation:MinItems=1
+	TargetRefs []TargetRef `json:"targetRefs"`
+
+	// OIDC defines the authentication configuration.
+	// +kubebuilder:validation:Required
+	OIDC OIDCConfig `json:"oidc"`
+}
+
+// AuthentikStatus tracks created Authentik resources.
+type AuthentikStatus struct {
+	ProviderID       int      `json:"providerID,omitempty"`
+	ClientID         string   `json:"clientID,omitempty"`
+	ApplicationSlug  string   `json:"applicationSlug,omitempty"`
+	ApplicationID    string   `json:"applicationID,omitempty"`
+	PolicyBindingIDs []string `json:"policyBindingIDs,omitempty"`
+}
+
+// SecurityPolicyRef tracks a created SecurityPolicy.
+type SecurityPolicyRef struct {
+	Name        string `json:"name"`
+	TargetRoute string `json:"targetRoute"`
+}
+
+// OIDCPolicyStatus defines the observed state.
 type OIDCPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the OIDCPolicy resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
+	// Conditions represent the latest available observations.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Authentik tracks created Authentik resources.
+	Authentik *AuthentikStatus `json:"authentik,omitempty"`
+
+	// SecurityPolicies lists the created SecurityPolicy resources.
+	SecurityPolicies []SecurityPolicyRef `json:"securityPolicies,omitempty"`
+
+	// SecretName is the name of the Secret containing the OIDC client credentials.
+	SecretName string `json:"secretName,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=`.spec.providerRef.name`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// OIDCPolicy is the Schema for the oidcpolicies API
+// OIDCPolicy defines OIDC protection for one or more HTTPRoutes.
 type OIDCPolicy struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// metadata is a standard object metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
-
-	// spec defines the desired state of OIDCPolicy
-	// +required
-	Spec OIDCPolicySpec `json:"spec"`
-
-	// status defines the observed state of OIDCPolicy
-	// +optional
-	Status OIDCPolicyStatus `json:"status,omitzero"`
+	Spec   OIDCPolicySpec   `json:"spec,omitempty"`
+	Status OIDCPolicyStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// OIDCPolicyList contains a list of OIDCPolicy
+// OIDCPolicyList contains a list of OIDCPolicy.
 type OIDCPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []OIDCPolicy `json:"items"`
 }
 

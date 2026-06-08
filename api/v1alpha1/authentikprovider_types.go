@@ -1,90 +1,73 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// AuthentikProviderSpec defines the desired state of AuthentikProvider
-type AuthentikProviderSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of AuthentikProvider. Edit authentikprovider_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+// SecretKeyReference holds a reference to a key within a Secret.
+type SecretKeyReference struct {
+	// Name of the Secret.
+	Name string `json:"name"`
+	// Namespace of the Secret.
+	Namespace string `json:"namespace"`
+	// Key within the Secret.
+	Key string `json:"key"`
 }
 
-// AuthentikProviderStatus defines the observed state of AuthentikProvider.
+// AuthentikProviderSpec defines the connection to an Authentik instance.
+type AuthentikProviderSpec struct {
+	// Host is the base URL of the Authentik instance (e.g., "https://authentik.example.com").
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https?://`
+	Host string `json:"host"`
+
+	// APITokenSecretRef references a Secret containing the Authentik API token.
+	// +kubebuilder:validation:Required
+	APITokenSecretRef SecretKeyReference `json:"apiTokenSecretRef"`
+
+	// AuthorizationFlowSlug is the slug of the authorization flow to use.
+	// +kubebuilder:default="default-provider-authorization-implicit-consent"
+	AuthorizationFlowSlug string `json:"authorizationFlowSlug,omitempty"`
+
+	// InvalidationFlowSlug is the slug of the invalidation flow to use.
+	// +kubebuilder:default="default-provider-invalidation-flow"
+	InvalidationFlowSlug string `json:"invalidationFlowSlug,omitempty"`
+}
+
+// AuthentikProviderStatus defines the observed state.
 type AuthentikProviderStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the AuthentikProvider resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
+	// Conditions represent the latest available observations.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// AuthorizationFlowUID is the resolved UUID of the authorization flow.
+	AuthorizationFlowUID string `json:"authorizationFlowUID,omitempty"`
+
+	// InvalidationFlowUID is the resolved UUID of the invalidation flow.
+	InvalidationFlowUID string `json:"invalidationFlowUID,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.host`
+// +kubebuilder:printcolumn:name="Connected",type=string,JSONPath=`.status.conditions[?(@.type=="Connected")].status`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// AuthentikProvider is the Schema for the authentikproviders API
+// AuthentikProvider represents a connection to an Authentik identity provider instance.
 type AuthentikProvider struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// metadata is a standard object metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
-
-	// spec defines the desired state of AuthentikProvider
-	// +required
-	Spec AuthentikProviderSpec `json:"spec"`
-
-	// status defines the observed state of AuthentikProvider
-	// +optional
-	Status AuthentikProviderStatus `json:"status,omitzero"`
+	Spec   AuthentikProviderSpec   `json:"spec,omitempty"`
+	Status AuthentikProviderStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// AuthentikProviderList contains a list of AuthentikProvider
+// AuthentikProviderList contains a list of AuthentikProvider.
 type AuthentikProviderList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AuthentikProvider `json:"items"`
 }
 
