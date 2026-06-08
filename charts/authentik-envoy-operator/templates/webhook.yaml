@@ -1,0 +1,41 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "authentik-envoy-operator.fullname" . }}-webhook
+  labels:
+    {{- include "authentik-envoy-operator.labels" . | nindent 4 }}
+spec:
+  ports:
+    - port: 443
+      targetPort: webhook
+      protocol: TCP
+  selector:
+    {{- include "authentik-envoy-operator.selectorLabels" . | nindent 4 }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "authentik-envoy-operator.fullname" . }}
+  labels:
+    {{- include "authentik-envoy-operator.labels" . | nindent 4 }}
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "authentik-envoy-operator.fullname" . }}-webhook
+  {{- end }}
+webhooks:
+  - name: voidcpolicy.kb.io
+    clientConfig:
+      service:
+        name: {{ include "authentik-envoy-operator.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-authentik-envoy-operator-io-v1alpha1-oidcpolicy
+    rules:
+      - apiGroups: ["authentik-envoy-operator.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["oidcpolicies"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+{{- end }}

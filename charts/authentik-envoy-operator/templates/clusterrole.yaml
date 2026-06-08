@@ -1,0 +1,34 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "authentik-envoy-operator.fullname" . }}
+  labels:
+    {{- include "authentik-envoy-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentik-envoy-operator.io"]
+    resources: ["oidcpolicies"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["authentik-envoy-operator.io"]
+    resources: ["oidcpolicies/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["authentik-envoy-operator.io"]
+    resources: ["oidcpolicies/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["authentik-envoy-operator.io"]
+    resources: ["authentikproviders"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["authentik-envoy-operator.io"]
+    resources: ["authentikproviders/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["securitypolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]

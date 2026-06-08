@@ -1,0 +1,14 @@
+apiVersion: v2
+name: authentik-envoy-operator
+description: Kubernetes operator for Authentik OIDC + Envoy Gateway SecurityPolicy automation
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - authentik
+  - envoy
+  - oidc
+  - gateway
+  - security
+sources:
+  - https://github.com/authentik-envoy-operator/authentik-envoy-operator

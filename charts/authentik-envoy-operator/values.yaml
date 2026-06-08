@@ -1,0 +1,38 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/authentik-envoy-operator/authentik-envoy-operator
+  tag: ""
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+webhook:
+  enabled: true
+  certManager:
+    enabled: true
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    namespace: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
