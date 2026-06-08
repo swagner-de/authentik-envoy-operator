@@ -1,9 +1,24 @@
 apiVersion: authentik-envoy-operator.io/v1alpha1
 kind: OIDCPolicy
 metadata:
-  labels:
-    app.kubernetes.io/name: authentik-envoy-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: oidcpolicy-sample
+  name: grafana-oidc
+  namespace: monitoring
 spec:
-  # TODO(user): Add fields here
+  providerRef:
+    name: main
+  targetRefs:
+    - name: grafana-route
+  oidc:
+    allowedGroups:
+      - admins
+      - developers
+    signingKey: "authentik Self-signed Certificate"
+    propertyMappings:
+      - "authentik default OAuth Mapping: OpenID 'openid'"
+      - "authentik default OAuth Mapping: OpenID 'profile'"
+      - "authentik default OAuth Mapping: OpenID 'email'"
+    scopes:
+      - openid
+      - profile
+      - email
+    forwardAccessToken: true

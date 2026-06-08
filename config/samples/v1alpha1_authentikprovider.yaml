@@ -1,9 +1,12 @@
 apiVersion: authentik-envoy-operator.io/v1alpha1
 kind: AuthentikProvider
 metadata:
-  labels:
-    app.kubernetes.io/name: authentik-envoy-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: authentikprovider-sample
+  name: main
 spec:
-  # TODO(user): Add fields here
+  host: "https://authentik.example.com"
+  apiTokenSecretRef:
+    name: authentik-api-token
+    namespace: authentik-system
+    key: token
+  authorizationFlowSlug: "default-provider-authorization-implicit-consent"
+  invalidationFlowSlug: "default-provider-invalidation-flow"

@@ -1,135 +1,135 @@
-# authentik-envoy-operator
-// TODO(user): Add simple overview of use/purpose
+# Authentik Envoy Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator that automates OIDC authentication for services behind Envoy Gateway by managing Authentik OAuth2 providers and Envoy Gateway SecurityPolicy resources.
 
-## Getting Started
+## Overview
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+This operator watches `OIDCPolicy` custom resources and:
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+1. Creates an OAuth2 provider and application in Authentik
+2. Configures group-based access control via Authentik policy bindings
+3. Syncs the generated client secret to a Kubernetes Secret
+4. Creates an Envoy Gateway `SecurityPolicy` with OIDC, JWT validation, and group-based authorization
 
-```sh
-make docker-build docker-push IMG=<some-registry>/authentik-envoy-operator:tag
+## Prerequisites
+
+- Kubernetes 1.28+
+- Envoy Gateway 1.0+
+- Authentik instance with API token
+- Gateway API CRDs installed
+
+## Installation
+
+### Helm
+
+```bash
+helm install authentik-envoy-operator ./charts/authentik-envoy-operator \
+  --namespace authentik-system --create-namespace
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+## Custom Resources
 
-**Install the CRDs into the cluster:**
+### AuthentikProvider (cluster-scoped)
 
-```sh
-make install
+Defines the connection to an Authentik instance:
+
+```yaml
+apiVersion: authentik-envoy-operator.io/v1alpha1
+kind: AuthentikProvider
+metadata:
+  name: main
+spec:
+  host: "https://authentik.example.com"
+  apiTokenSecretRef:
+    name: authentik-api-token
+    namespace: authentik-system
+    key: token
+  authorizationFlowSlug: "default-provider-authorization-implicit-consent"
+  invalidationFlowSlug: "default-provider-invalidation-flow"
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+### OIDCPolicy (namespaced)
 
-```sh
-make deploy IMG=<some-registry>/authentik-envoy-operator:tag
+Protects HTTPRoutes with OIDC authentication:
+
+```yaml
+apiVersion: authentik-envoy-operator.io/v1alpha1
+kind: OIDCPolicy
+metadata:
+  name: grafana-oidc
+  namespace: monitoring
+spec:
+  providerRef:
+    name: main
+  targetRefs:
+    - name: grafana-route
+  oidc:
+    allowedGroups:
+      - admins
+      - developers
+    signingKey: "authentik Self-signed Certificate"
+    propertyMappings:
+      - "authentik default OAuth Mapping: OpenID 'openid'"
+      - "authentik default OAuth Mapping: OpenID 'profile'"
+      - "authentik default OAuth Mapping: OpenID 'email'"
+    scopes:
+      - openid
+      - profile
+      - email
+    forwardAccessToken: true
+    cookieConfig:
+      namePrefix: "grafana"
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+## How It Works
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+1. The operator resolves the `AuthentikProvider` to get API credentials
+2. It looks up groups, signing keys, and property mappings by name in Authentik
+3. It derives redirect URIs from HTTPRoute hostnames
+4. It creates/updates the OAuth2 provider and application in Authentik
+5. It binds the specified groups to the application
+6. It syncs the client secret to a Kubernetes Secret
+7. It creates a SecurityPolicy per targetRef with:
+   - OIDC configuration (issuer, client credentials, scopes)
+   - JWT validation (JWKS endpoint, audience check)
+   - Authorization rules (group-based access via JWT claims)
 
-```sh
-kubectl apply -k config/samples/
+## Authentik API Token Permissions
+
+The API token needs the following permissions:
+
+- `authentik_core.view_application`, `add_application`, `change_application`, `delete_application`
+- `authentik_providers_oauth2.view_oauth2provider`, `add_oauth2provider`, `change_oauth2provider`, `delete_oauth2provider`
+- `authentik_policies.view_policybinding`, `add_policybinding`, `delete_policybinding`
+- `authentik_flows.view_flow`
+- `authentik_core.view_group`
+- `authentik_crypto.view_certificatekeypair`
+- `authentik_providers_oauth2.view_scopemapping`
+
+## Metrics
+
+The operator exposes Prometheus metrics:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `authentik_operator_reconcile_duration_seconds` | Histogram | Reconcile loop duration |
+| `authentik_operator_reconcile_errors_total` | Counter | Reconcile errors by type |
+| `authentik_operator_policy_status` | Gauge | Policy status (1=ready, 0=not ready) |
+| `authentik_operator_provider_connected` | Gauge | Provider connectivity (1=connected) |
+
+## Development
+
+```bash
+# Run tests
+make test
+
+# Run locally against current kubeconfig
+make run
+
+# Build image
+make docker-build IMG=registry.example.com/authentik-envoy-operator:latest
 ```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/authentik-envoy-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/authentik-envoy-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+Apache License 2.0
