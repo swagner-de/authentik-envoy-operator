@@ -1,0 +1,9 @@
+apiVersion: authentik-envoy-operator.io/v1alpha1
+kind: AuthentikProvider
+metadata:
+  labels:
+    app.kubernetes.io/name: authentik-envoy-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: authentikprovider-sample
+spec:
+  # TODO(user): Add fields here
