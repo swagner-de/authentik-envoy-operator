@@ -321,6 +321,25 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		SecretName:      secretName,
 	}
 
+	// Delete orphaned SecurityPolicies from previous reconcile
+	desiredNames := make(map[string]bool)
+	for _, targetRef := range policy.Spec.TargetRefs {
+		desiredNames[fmt.Sprintf("%s-%s", policy.Name, targetRef.Name)] = true
+	}
+	for _, ref := range policy.Status.SecurityPolicies {
+		if !desiredNames[ref.Name] {
+			stale := &egv1alpha1.SecurityPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ref.Name,
+					Namespace: policy.Namespace,
+				},
+			}
+			if err := r.Delete(ctx, stale); client.IgnoreNotFound(err) != nil {
+				log.Error(err, "failed to delete orphaned SecurityPolicy", "name", ref.Name)
+			}
+		}
+	}
+
 	for _, targetRef := range policy.Spec.TargetRefs {
 		desired := BuildSecurityPolicy(&policy, targetRef, params)
 
