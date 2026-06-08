@@ -15,7 +15,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
@@ -456,15 +458,58 @@ func (r *OIDCPolicyReconciler) setCondition(policy *v1alpha1.OIDCPolicy, status 
 func (r *OIDCPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.OIDCPolicy{}).
+		Owns(&egv1alpha1.SecurityPolicy{}).
+		Watches(&v1alpha1.AuthentikProvider{}, handler.EnqueueRequestsFromMapFunc(r.mapProviderToPolicies)).
+		Watches(&gwapiv1.HTTPRoute{}, handler.EnqueueRequestsFromMapFunc(r.mapHTTPRouteToPolicies)).
 		Complete(r)
+}
+
+func (r *OIDCPolicyReconciler) mapProviderToPolicies(ctx context.Context, obj client.Object) []reconcile.Request {
+	var policies v1alpha1.OIDCPolicyList
+	if err := r.List(ctx, &policies); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, p := range policies.Items {
+		if p.Spec.ProviderRef.Name == obj.GetName() {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: p.Name, Namespace: p.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
+func (r *OIDCPolicyReconciler) mapHTTPRouteToPolicies(ctx context.Context, obj client.Object) []reconcile.Request {
+	var policies v1alpha1.OIDCPolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, p := range policies.Items {
+		for _, ref := range p.Spec.TargetRefs {
+			if ref.Name == obj.GetName() {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: p.Name, Namespace: p.Namespace},
+				})
+				break
+			}
+		}
+	}
+	return requests
 }
 
 func stringSliceEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	counts := make(map[string]int, len(a))
+	for _, s := range a {
+		counts[s]++
+	}
+	for _, s := range b {
+		counts[s]--
+		if counts[s] < 0 {
 			return false
 		}
 	}
