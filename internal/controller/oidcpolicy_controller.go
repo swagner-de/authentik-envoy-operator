@@ -1,63 +1,357 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	authentikenvoyoperatoriov1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
+	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
+	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
+	appmetrics "github.com/authentik-envoy-operator/authentik-envoy-operator/internal/metrics"
 )
 
-// OIDCPolicyReconciler reconciles a OIDCPolicy object
+const (
+	ConditionReady = "Ready"
+	finalizerName  = "authentik-envoy-operator.io/cleanup"
+)
+
+// OIDCPolicyReconciler reconciles OIDCPolicy resources.
 type OIDCPolicyReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=authentik-envoy-operator.io,resources=oidcpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=authentik-envoy-operator.io,resources=oidcpolicies,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=authentik-envoy-operator.io,resources=oidcpolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=authentik-envoy-operator.io,resources=oidcpolicies/finalizers,verbs=update
+// +kubebuilder:rbac:groups=authentik-envoy-operator.io,resources=authentikproviders,verbs=get;list;watch
+// +kubebuilder:rbac:groups=gateway.envoyproxy.io,resources=securitypolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the OIDCPolicy object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
 func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := log.FromContext(ctx)
+	startTime := time.Now()
+	defer func() {
+		appmetrics.ReconcileDuration.WithLabelValues(req.Name, req.Namespace).Observe(time.Since(startTime).Seconds())
+	}()
 
-	// TODO(user): your logic here
+	var policy v1alpha1.OIDCPolicy
+	if err := r.Get(ctx, req.NamespacedName, &policy); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	// Handle deletion
+	if !policy.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&policy, finalizerName) {
+			if err := r.cleanup(ctx, &policy); err != nil {
+				log.Error(err, "Cleanup failed")
+				return ctrl.Result{}, err
+			}
+			controllerutil.RemoveFinalizer(&policy, finalizerName)
+			if err := r.Update(ctx, &policy); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer
+	if !controllerutil.ContainsFinalizer(&policy, finalizerName) {
+		controllerutil.AddFinalizer(&policy, finalizerName)
+		return ctrl.Result{}, r.Update(ctx, &policy)
+	}
+
+	// Fetch AuthentikProvider
+	var provider v1alpha1.AuthentikProvider
+	if err := r.Get(ctx, types.NamespacedName{Name: policy.Spec.ProviderRef.Name}, &provider); err != nil {
+		r.setCondition(&policy, metav1.ConditionFalse, "ProviderNotFound", fmt.Sprintf("AuthentikProvider %q not found", policy.Spec.ProviderRef.Name))
+		appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+		if err := r.Status().Update(ctx, &policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Check provider is connected
+	connected := meta.FindStatusCondition(provider.Status.Conditions, ConditionConnected)
+	if connected == nil || connected.Status != metav1.ConditionTrue {
+		r.setCondition(&policy, metav1.ConditionFalse, "ProviderNotConnected", "AuthentikProvider is not connected")
+		appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+		if err := r.Status().Update(ctx, &policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Build Authentik client
+	var secret corev1.Secret
+	secretRef := types.NamespacedName{
+		Name:      provider.Spec.APITokenSecretRef.Name,
+		Namespace: provider.Spec.APITokenSecretRef.Namespace,
+	}
+	if err := r.Get(ctx, secretRef, &secret); err != nil {
+		r.setCondition(&policy, metav1.ConditionFalse, "SecretNotFound", "API token secret not found")
+		appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+		if err := r.Status().Update(ctx, &policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	}
+	token := string(secret.Data[provider.Spec.APITokenSecretRef.Key])
+	apiClient := authentik.NewClient(provider.Spec.Host, token)
+
+	// Derive identifiers
+	appSlug := fmt.Sprintf("%s-%s", policy.Namespace, policy.Name)
+	clientID := appSlug
+
+	// Step 1: Resolve groups
+	groupUUIDs := make(map[string]string)
+	for _, groupName := range policy.Spec.OIDC.AllowedGroups {
+		group, err := apiClient.GetGroupByName(ctx, groupName)
+		if err != nil {
+			r.setCondition(&policy, metav1.ConditionFalse, "GroupNotFound", fmt.Sprintf("group %q not found in Authentik", groupName))
+			appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "group_not_found").Inc()
+			if err := r.Status().Update(ctx, &policy); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+		groupUUIDs[groupName] = group.PK
+	}
+
+	// Step 2: Create/Update Authentik OAuth2 Provider
+	providerReq := authentik.OAuth2ProviderRequest{
+		Name:              appSlug,
+		AuthorizationFlow: provider.Status.AuthorizationFlowUID,
+		InvalidationFlow:  provider.Status.InvalidationFlowUID,
+		ClientType:        "confidential",
+		ClientID:          clientID,
+		RedirectURIs: []authentik.RedirectURI{
+			{
+				MatchingMode:    "regex",
+				URL:             fmt.Sprintf("https://.*/%s/oauth2/callback", appSlug),
+				RedirectURIType: "authorization",
+			},
+		},
+	}
+
+	var oauthProvider *authentik.OAuth2Provider
+	if policy.Status.Authentik != nil && policy.Status.Authentik.ProviderID > 0 {
+		var err error
+		oauthProvider, err = apiClient.UpdateProvider(ctx, policy.Status.Authentik.ProviderID, providerReq)
+		if err != nil {
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "provider_update").Inc()
+			return ctrl.Result{}, fmt.Errorf("updating Authentik provider: %w", err)
+		}
+	} else {
+		var err error
+		oauthProvider, err = apiClient.CreateProvider(ctx, providerReq)
+		if err != nil {
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "provider_create").Inc()
+			return ctrl.Result{}, fmt.Errorf("creating Authentik provider: %w", err)
+		}
+	}
+
+	// Step 3: Create/Update Authentik Application
+	appReq := authentik.ApplicationRequest{
+		Name:             appSlug,
+		Slug:             appSlug,
+		Provider:         oauthProvider.PK,
+		PolicyEngineMode: "any",
+	}
+
+	var app *authentik.Application
+	if policy.Status.Authentik != nil && policy.Status.Authentik.ApplicationSlug != "" {
+		var updateErr error
+		app, updateErr = apiClient.UpdateApplication(ctx, policy.Status.Authentik.ApplicationSlug, appReq)
+		if updateErr != nil {
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "application_update").Inc()
+			// Only fallback to create if the application doesn't exist (404)
+			var apiErr *authentik.APIError
+			if !errors.As(updateErr, &apiErr) || apiErr.StatusCode != 404 {
+				return ctrl.Result{}, fmt.Errorf("updating Authentik application: %w", updateErr)
+			}
+			log.Info("Application not found, will create", "slug", policy.Status.Authentik.ApplicationSlug)
+		}
+	}
+	if app == nil {
+		var err error
+		app, err = apiClient.CreateApplication(ctx, appReq)
+		if err != nil {
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "application_create").Inc()
+			return ctrl.Result{}, fmt.Errorf("creating Authentik application: %w", err)
+		}
+	}
+
+	// Step 4: Reconcile PolicyBindings
+	// Delete stale bindings from previous reconcile
+	if policy.Status.Authentik != nil {
+		for _, bindingID := range policy.Status.Authentik.PolicyBindingIDs {
+			if err := apiClient.DeletePolicyBinding(ctx, bindingID); err != nil {
+				log.Error(err, "failed to delete stale policy binding", "id", bindingID)
+			}
+		}
+	}
+
+	// Create fresh bindings
+	var bindingIDs []string
+	for i, groupName := range policy.Spec.OIDC.AllowedGroups {
+		binding, err := apiClient.CreatePolicyBinding(ctx, authentik.PolicyBindingRequest{
+			Target:  app.PK,
+			Group:   groupUUIDs[groupName],
+			Order:   i,
+			Enabled: true,
+		})
+		if err != nil {
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "binding_create").Inc()
+			log.Error(err, "failed to create policy binding", "group", groupName)
+			continue
+		}
+		bindingIDs = append(bindingIDs, binding.PK)
+	}
+
+	// Check if any bindings failed
+	if len(bindingIDs) != len(policy.Spec.OIDC.AllowedGroups) {
+		r.setCondition(&policy, metav1.ConditionFalse, "BindingsFailed", "one or more policy bindings failed to create")
+		appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+		if err := r.Status().Update(ctx, &policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Step 5: Sync client secret to K8s
+	secretName := fmt.Sprintf("%s-client-secret", policy.Name)
+	clientSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: policy.Namespace,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, clientSecret, func() error {
+		clientSecret.Data = map[string][]byte{
+			"client-secret": []byte(oauthProvider.ClientSecret),
+		}
+		return controllerutil.SetControllerReference(&policy, clientSecret, r.Scheme)
+	})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("syncing client secret: %w", err)
+	}
+
+	// Step 6: Create/Update SecurityPolicies (one per targetRef)
+	var secPolicyRefs []v1alpha1.SecurityPolicyRef
+	params := SecurityPolicyParams{
+		AuthentikHost:   provider.Spec.Host,
+		ApplicationSlug: appSlug,
+		ClientID:        clientID,
+		SecretName:      secretName,
+	}
+
+	for _, targetRef := range policy.Spec.TargetRefs {
+		spOutput := BuildSecurityPolicy(&policy, targetRef, params)
+		secPolicyRefs = append(secPolicyRefs, v1alpha1.SecurityPolicyRef{
+			Name:        spOutput.Name,
+			TargetRoute: targetRef.Name,
+		})
+	}
+
+	// Step 7: Update status
+	policy.Status.Authentik = &v1alpha1.AuthentikStatus{
+		ProviderID:       oauthProvider.PK,
+		ClientID:         clientID,
+		ApplicationSlug:  appSlug,
+		ApplicationID:    app.PK,
+		PolicyBindingIDs: bindingIDs,
+	}
+	policy.Status.SecurityPolicies = secPolicyRefs
+	policy.Status.SecretName = secretName
+	r.setCondition(&policy, metav1.ConditionTrue, "Reconciled", "All resources created successfully")
+	appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(1)
+
+	if err := r.Status().Update(ctx, &policy); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("OIDCPolicy reconciled", "appSlug", appSlug)
+	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
+func (r *OIDCPolicyReconciler) cleanup(ctx context.Context, policy *v1alpha1.OIDCPolicy) error {
+	log := log.FromContext(ctx)
+
+	if policy.Status.Authentik == nil {
+		return nil
+	}
+
+	// Get AuthentikProvider for API access
+	var provider v1alpha1.AuthentikProvider
+	if err := r.Get(ctx, types.NamespacedName{Name: policy.Spec.ProviderRef.Name}, &provider); err != nil {
+		log.Error(err, "cannot reach AuthentikProvider for cleanup, skipping Authentik resource deletion")
+		return nil
+	}
+
+	var secret corev1.Secret
+	secretRef := types.NamespacedName{
+		Name:      provider.Spec.APITokenSecretRef.Name,
+		Namespace: provider.Spec.APITokenSecretRef.Namespace,
+	}
+	if err := r.Get(ctx, secretRef, &secret); err != nil {
+		log.Error(err, "cannot read API token for cleanup")
+		return nil
+	}
+	token := string(secret.Data[provider.Spec.APITokenSecretRef.Key])
+	apiClient := authentik.NewClient(provider.Spec.Host, token)
+
+	// Delete policy bindings
+	for _, bindingID := range policy.Status.Authentik.PolicyBindingIDs {
+		if err := apiClient.DeletePolicyBinding(ctx, bindingID); err != nil {
+			log.Error(err, "failed to delete policy binding", "id", bindingID)
+		}
+	}
+
+	// Delete application
+	if policy.Status.Authentik.ApplicationSlug != "" {
+		if err := apiClient.DeleteApplication(ctx, policy.Status.Authentik.ApplicationSlug); err != nil {
+			log.Error(err, "failed to delete application", "slug", policy.Status.Authentik.ApplicationSlug)
+		}
+	}
+
+	// Delete provider
+	if policy.Status.Authentik.ProviderID > 0 {
+		if err := apiClient.DeleteProvider(ctx, policy.Status.Authentik.ProviderID); err != nil {
+			log.Error(err, "failed to delete provider", "id", policy.Status.Authentik.ProviderID)
+		}
+	}
+
+	return nil
+}
+
+func (r *OIDCPolicyReconciler) setCondition(policy *v1alpha1.OIDCPolicy, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(&policy.Status.Conditions, metav1.Condition{
+		Type:               ConditionReady,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
 func (r *OIDCPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&authentikenvoyoperatoriov1alpha1.OIDCPolicy{}).
-		Named("oidcpolicy").
+		For(&v1alpha1.OIDCPolicy{}).
 		Complete(r)
 }
