@@ -18,63 +18,77 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
+	"slices"
 
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	authentikenvoyoperatoriov1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
+	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 )
-
-// nolint:unused
-// log is for logging in this package.
-var oidcpolicylog = logf.Log.WithName("oidcpolicy-resource")
 
 // SetupOIDCPolicyWebhookWithManager registers the webhook for OIDCPolicy in the manager.
 func SetupOIDCPolicyWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr, &authentikenvoyoperatoriov1alpha1.OIDCPolicy{}).
+	return ctrl.NewWebhookManagedBy(mgr, &v1alpha1.OIDCPolicy{}).
 		WithValidator(&OIDCPolicyCustomValidator{}).
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-// NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
 // +kubebuilder:webhook:path=/validate-authentik-envoy-operator-io-v1alpha1-oidcpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=authentik-envoy-operator.io,resources=oidcpolicies,verbs=create;update,versions=v1alpha1,name=voidcpolicy-v1alpha1.kb.io,admissionReviewVersions=v1
 
 // OIDCPolicyCustomValidator struct is responsible for validating the OIDCPolicy resource
 // when it is created, updated, or deleted.
 //
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as this struct is used only for temporary operations and does not need to be deeply copied.
-type OIDCPolicyCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
-}
+// +kubebuilder:object:generate=false
+type OIDCPolicyCustomValidator struct{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type OIDCPolicy.
-func (v *OIDCPolicyCustomValidator) ValidateCreate(_ context.Context, obj *authentikenvoyoperatoriov1alpha1.OIDCPolicy) (admission.Warnings, error) {
-	oidcpolicylog.Info("Validation for OIDCPolicy upon creation", "name", obj.GetName())
-
-	// TODO(user): fill in your validation logic upon object creation.
-
-	return nil, nil
+func (v *OIDCPolicyCustomValidator) ValidateCreate(_ context.Context, obj *v1alpha1.OIDCPolicy) (admission.Warnings, error) {
+	return validateOIDCPolicy(obj)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type OIDCPolicy.
-func (v *OIDCPolicyCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *authentikenvoyoperatoriov1alpha1.OIDCPolicy) (admission.Warnings, error) {
-	oidcpolicylog.Info("Validation for OIDCPolicy upon update", "name", newObj.GetName())
-
-	// TODO(user): fill in your validation logic upon object update.
-
-	return nil, nil
+func (v *OIDCPolicyCustomValidator) ValidateUpdate(_ context.Context, _, newObj *v1alpha1.OIDCPolicy) (admission.Warnings, error) {
+	return validateOIDCPolicy(newObj)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type OIDCPolicy.
-func (v *OIDCPolicyCustomValidator) ValidateDelete(_ context.Context, obj *authentikenvoyoperatoriov1alpha1.OIDCPolicy) (admission.Warnings, error) {
-	oidcpolicylog.Info("Validation for OIDCPolicy upon deletion", "name", obj.GetName())
+func (v *OIDCPolicyCustomValidator) ValidateDelete(_ context.Context, _ *v1alpha1.OIDCPolicy) (admission.Warnings, error) {
+	return nil, nil
+}
 
-	// TODO(user): fill in your validation logic upon object deletion.
+func validateOIDCPolicy(policy *v1alpha1.OIDCPolicy) (admission.Warnings, error) {
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
+	if len(policy.Spec.TargetRefs) == 0 {
+		allErrs = append(allErrs, field.Required(specPath.Child("targetRefs"), "at least one targetRef is required"))
+	}
+
+	oidcPath := specPath.Child("oidc")
+
+	if len(policy.Spec.OIDC.AllowedGroups) == 0 {
+		allErrs = append(allErrs, field.Required(oidcPath.Child("allowedGroups"), "at least one group is required"))
+	}
+
+	if !slices.Contains(policy.Spec.OIDC.Scopes, "openid") {
+		allErrs = append(allErrs, field.Invalid(oidcPath.Child("scopes"), policy.Spec.OIDC.Scopes, "must contain 'openid'"))
+	}
+
+	if policy.Spec.OIDC.CookieConfig != nil && policy.Spec.OIDC.CookieConfig.SameSite != "" {
+		validSameSite := []string{"Lax", "Strict", "None"}
+		if !slices.Contains(validSameSite, policy.Spec.OIDC.CookieConfig.SameSite) {
+			allErrs = append(allErrs, field.Invalid(
+				oidcPath.Child("cookieConfig", "sameSite"),
+				policy.Spec.OIDC.CookieConfig.SameSite,
+				fmt.Sprintf("must be one of: %v", validSameSite),
+			))
+		}
+	}
+
+	if len(allErrs) > 0 {
+		return nil, allErrs.ToAggregate()
+	}
 	return nil, nil
 }

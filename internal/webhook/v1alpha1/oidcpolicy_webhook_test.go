@@ -17,54 +17,162 @@ limitations under the License.
 package v1alpha1
 
 import (
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"context"
+	"testing"
 
-	authentikenvoyoperatoriov1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	// TODO (user): Add any additional imports if needed
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 )
 
-var _ = Describe("OIDCPolicy Webhook", func() {
-	var (
-		obj       *authentikenvoyoperatoriov1alpha1.OIDCPolicy
-		oldObj    *authentikenvoyoperatoriov1alpha1.OIDCPolicy
-		validator OIDCPolicyCustomValidator
-	)
+func TestOIDCPolicyValidation_MissingGroups(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	policy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{},
+				Scopes:        []string{"openid"},
+			},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), policy)
+	if err == nil {
+		t.Fatal("expected validation error for empty allowedGroups")
+	}
+}
 
-	BeforeEach(func() {
-		obj = &authentikenvoyoperatoriov1alpha1.OIDCPolicy{}
-		oldObj = &authentikenvoyoperatoriov1alpha1.OIDCPolicy{}
-		validator = OIDCPolicyCustomValidator{}
-		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
-		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
-		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-	})
+func TestOIDCPolicyValidation_MissingOpenIDScope(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	policy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{"admins"},
+				Scopes:        []string{"profile"},
+			},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), policy)
+	if err == nil {
+		t.Fatal("expected validation error for missing openid scope")
+	}
+}
 
-	AfterEach(func() {
-		// TODO (user): Add any teardown logic common to all tests
-	})
+func TestOIDCPolicyValidation_Valid(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	policy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{"admins"},
+				Scopes:        []string{"openid", "profile"},
+			},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), policy)
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
 
-	Context("When creating or updating OIDCPolicy under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
-	})
+func TestOIDCPolicyValidation_InvalidSameSite(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	policy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{"admins"},
+				Scopes:        []string{"openid"},
+				CookieConfig: &v1alpha1.CookieConfig{
+					SameSite: "Invalid",
+				},
+			},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), policy)
+	if err == nil {
+		t.Fatal("expected validation error for invalid SameSite")
+	}
+}
 
-})
+func TestOIDCPolicyValidation_MissingTargetRefs(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	policy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{"admins"},
+				Scopes:        []string{"openid"},
+			},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), policy)
+	if err == nil {
+		t.Fatal("expected validation error for empty targetRefs")
+	}
+}
+
+func TestOIDCPolicyValidation_ValidUpdate(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	oldPolicy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{"admins"},
+				Scopes:        []string{"openid"},
+			},
+		},
+	}
+	newPolicy := &v1alpha1.OIDCPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec: v1alpha1.OIDCPolicySpec{
+			ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+			TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+			OIDC: v1alpha1.OIDCConfig{
+				AllowedGroups: []string{"admins", "editors"},
+				Scopes:        []string{"openid", "email"},
+			},
+		},
+	}
+	_, err := v.ValidateUpdate(context.Background(), oldPolicy, newPolicy)
+	if err != nil {
+		t.Fatalf("unexpected validation error on update: %v", err)
+	}
+}
+
+func TestOIDCPolicyValidation_ValidSameSite(t *testing.T) {
+	v := &OIDCPolicyCustomValidator{}
+	for _, sameSite := range []string{"Lax", "Strict", "None"} {
+		policy := &v1alpha1.OIDCPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+			Spec: v1alpha1.OIDCPolicySpec{
+				ProviderRef: v1alpha1.ProviderRef{Name: "main"},
+				TargetRefs:  []v1alpha1.TargetRef{{Name: "route"}},
+				OIDC: v1alpha1.OIDCConfig{
+					AllowedGroups: []string{"admins"},
+					Scopes:        []string{"openid"},
+					CookieConfig: &v1alpha1.CookieConfig{
+						SameSite: sameSite,
+					},
+				},
+			},
+		}
+		_, err := v.ValidateCreate(context.Background(), policy)
+		if err != nil {
+			t.Fatalf("unexpected validation error for SameSite=%s: %v", sameSite, err)
+		}
+	}
+}
