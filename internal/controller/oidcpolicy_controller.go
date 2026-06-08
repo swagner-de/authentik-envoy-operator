@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	egv1alpha1 "github.com/envoyproxy/gateway/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
@@ -133,20 +135,64 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		groupUUIDs[groupName] = group.PK
 	}
 
-	// Step 2: Create/Update Authentik OAuth2 Provider
+	// Step 1b: Resolve signing key name to UUID
+	signingKeyPair, err := apiClient.GetCertificateKeyPairByName(ctx, policy.Spec.OIDC.SigningKey)
+	if err != nil {
+		r.setCondition(&policy, metav1.ConditionFalse, "SigningKeyNotFound", fmt.Sprintf("signing key %q not found in Authentik", policy.Spec.OIDC.SigningKey))
+		appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+		if err := r.Status().Update(ctx, &policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Step 1c: Resolve property mapping names to UUIDs
+	var propertyMappingUUIDs []string
+	for _, mappingName := range policy.Spec.OIDC.PropertyMappings {
+		mapping, err := apiClient.GetScopeMappingByName(ctx, mappingName)
+		if err != nil {
+			r.setCondition(&policy, metav1.ConditionFalse, "PropertyMappingNotFound", fmt.Sprintf("property mapping %q not found in Authentik", mappingName))
+			appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+			if err := r.Status().Update(ctx, &policy); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		propertyMappingUUIDs = append(propertyMappingUUIDs, mapping.PK)
+	}
+
+	// Step 2: Resolve redirect URIs from HTTPRoute hostnames
+	var redirectURIs []authentik.RedirectURI
+	for _, targetRef := range policy.Spec.TargetRefs {
+		var httpRoute gwapiv1.HTTPRoute
+		if err := r.Get(ctx, types.NamespacedName{Name: targetRef.Name, Namespace: policy.Namespace}, &httpRoute); err != nil {
+			r.setCondition(&policy, metav1.ConditionFalse, "HTTPRouteNotFound", fmt.Sprintf("HTTPRoute %q not found", targetRef.Name))
+			appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+			if err := r.Status().Update(ctx, &policy); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		for _, hostname := range httpRoute.Spec.Hostnames {
+			redirectURIs = append(redirectURIs, authentik.RedirectURI{
+				MatchingMode:    "strict",
+				URL:             fmt.Sprintf("https://%s/oauth2/callback", hostname),
+				RedirectURIType: "authorization",
+			})
+		}
+	}
+
+	// Step 3: Create/Update Authentik OAuth2 Provider
 	providerReq := authentik.OAuth2ProviderRequest{
 		Name:              appSlug,
 		AuthorizationFlow: provider.Status.AuthorizationFlowUID,
 		InvalidationFlow:  provider.Status.InvalidationFlowUID,
 		ClientType:        "confidential",
 		ClientID:          clientID,
-		RedirectURIs: []authentik.RedirectURI{
-			{
-				MatchingMode:    "regex",
-				URL:             fmt.Sprintf("https://.*/%s/oauth2/callback", appSlug),
-				RedirectURIType: "authorization",
-			},
-		},
+		RedirectURIs:      redirectURIs,
+		GrantTypes:        []string{"authorization_code", "refresh_token"},
+		SigningKey:         signingKeyPair.PK,
+		PropertyMappings:  propertyMappingUUIDs,
 	}
 
 	var oauthProvider *authentik.OAuth2Provider
@@ -198,40 +244,54 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// Step 4: Reconcile PolicyBindings
-	// Delete stale bindings from previous reconcile
-	if policy.Status.Authentik != nil {
-		for _, bindingID := range policy.Status.Authentik.PolicyBindingIDs {
-			if err := apiClient.DeletePolicyBinding(ctx, bindingID); err != nil {
-				log.Error(err, "failed to delete stale policy binding", "id", bindingID)
+	// Only recreate bindings if the desired groups changed
+	desiredGroups := make([]string, len(policy.Spec.OIDC.AllowedGroups))
+	copy(desiredGroups, policy.Spec.OIDC.AllowedGroups)
+
+	var bindingIDs []string
+	needsBindingRecreate := policy.Status.Authentik == nil ||
+		len(policy.Status.Authentik.PolicyBindingIDs) == 0 ||
+		!stringSliceEqual(policy.Status.Authentik.BoundGroups, desiredGroups)
+
+	if needsBindingRecreate {
+		log.Info("Recreating policy bindings", "reason", "groups changed or no existing bindings")
+		// Delete stale bindings from previous reconcile
+		if policy.Status.Authentik != nil {
+			for _, bindingID := range policy.Status.Authentik.PolicyBindingIDs {
+				if err := apiClient.DeletePolicyBinding(ctx, bindingID); err != nil {
+					log.Error(err, "failed to delete stale policy binding", "id", bindingID)
+				}
 			}
 		}
-	}
 
-	// Create fresh bindings
-	var bindingIDs []string
-	for i, groupName := range policy.Spec.OIDC.AllowedGroups {
-		binding, err := apiClient.CreatePolicyBinding(ctx, authentik.PolicyBindingRequest{
-			Target:  app.PK,
-			Group:   groupUUIDs[groupName],
-			Order:   i,
-			Enabled: true,
-		})
-		if err != nil {
-			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "binding_create").Inc()
-			log.Error(err, "failed to create policy binding", "group", groupName)
-			continue
+		// Create fresh bindings
+		for i, groupName := range policy.Spec.OIDC.AllowedGroups {
+			binding, err := apiClient.CreatePolicyBinding(ctx, authentik.PolicyBindingRequest{
+				Target:  app.PK,
+				Group:   groupUUIDs[groupName],
+				Order:   i,
+				Enabled: true,
+			})
+			if err != nil {
+				appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "binding_create").Inc()
+				log.Error(err, "failed to create policy binding", "group", groupName)
+				continue
+			}
+			bindingIDs = append(bindingIDs, binding.PK)
 		}
-		bindingIDs = append(bindingIDs, binding.PK)
-	}
 
-	// Check if any bindings failed
-	if len(bindingIDs) != len(policy.Spec.OIDC.AllowedGroups) {
-		r.setCondition(&policy, metav1.ConditionFalse, "BindingsFailed", "one or more policy bindings failed to create")
-		appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
-		if err := r.Status().Update(ctx, &policy); err != nil {
-			return ctrl.Result{}, err
+		// Check if any bindings failed
+		if len(bindingIDs) != len(policy.Spec.OIDC.AllowedGroups) {
+			r.setCondition(&policy, metav1.ConditionFalse, "BindingsFailed", "one or more policy bindings failed to create")
+			appmetrics.PolicyStatus.WithLabelValues(req.Name, req.Namespace).Set(0)
+			if err := r.Status().Update(ctx, &policy); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	} else {
+		log.V(1).Info("Policy bindings unchanged, skipping recreation")
+		bindingIDs = policy.Status.Authentik.PolicyBindingIDs
 	}
 
 	// Step 5: Sync client secret to K8s
@@ -242,7 +302,7 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			Namespace: policy.Namespace,
 		},
 	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, clientSecret, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, clientSecret, func() error {
 		clientSecret.Data = map[string][]byte{
 			"client-secret": []byte(oauthProvider.ClientSecret),
 		}
@@ -262,9 +322,26 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	for _, targetRef := range policy.Spec.TargetRefs {
-		spOutput := BuildSecurityPolicy(&policy, targetRef, params)
+		desired := BuildSecurityPolicy(&policy, targetRef, params)
+
+		existing := &egv1alpha1.SecurityPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      desired.Name,
+				Namespace: desired.Namespace,
+			},
+		}
+		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+			existing.Spec = desired.Spec
+			existing.OwnerReferences = desired.OwnerReferences
+			return nil
+		})
+		if err != nil {
+			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "securitypolicy_sync").Inc()
+			return ctrl.Result{}, fmt.Errorf("syncing SecurityPolicy %s: %w", desired.Name, err)
+		}
+
 		secPolicyRefs = append(secPolicyRefs, v1alpha1.SecurityPolicyRef{
-			Name:        spOutput.Name,
+			Name:        desired.Name,
 			TargetRoute: targetRef.Name,
 		})
 	}
@@ -276,6 +353,7 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		ApplicationSlug:  appSlug,
 		ApplicationID:    app.PK,
 		PolicyBindingIDs: bindingIDs,
+		BoundGroups:      desiredGroups,
 	}
 	policy.Status.SecurityPolicies = secPolicyRefs
 	policy.Status.SecretName = secretName
@@ -354,4 +432,16 @@ func (r *OIDCPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.OIDCPolicy{}).
 		Complete(r)
+}
+
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

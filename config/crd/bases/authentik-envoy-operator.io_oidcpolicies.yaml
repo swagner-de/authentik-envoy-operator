@@ -85,6 +85,14 @@ spec:
                     description: ForwardAccessToken passes the access token to upstream
                       services.
                     type: boolean
+                  propertyMappings:
+                    description: |-
+                      PropertyMappings is a list of Authentik scope mapping names to include in the provider.
+                      These control which claims (e.g., groups, email, profile) are included in tokens.
+                      The controller resolves names to UUIDs via the Authentik API.
+                    items:
+                      type: string
+                    type: array
                   redirectURL:
                     description: |-
                       RedirectURL overrides the auto-derived redirect URL.
@@ -98,8 +106,14 @@ spec:
                     items:
                       type: string
                     type: array
+                  signingKey:
+                    description: |-
+                      SigningKey is the name of the Authentik certificate keypair used to sign tokens.
+                      The controller resolves this to the keypair's UUID via the Authentik API.
+                    type: string
                 required:
                 - allowedGroups
+                - signingKey
                 type: object
               providerRef:
                 description: ProviderRef references a cluster-scoped AuthentikProvider.
@@ -140,6 +154,10 @@ spec:
                     type: string
                   applicationSlug:
                     type: string
+                  boundGroups:
+                    items:
+                      type: string
+                    type: array
                   clientID:
                     type: string
                   policyBindingIDs:

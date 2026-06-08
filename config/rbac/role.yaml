@@ -5,10 +5,16 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - authentik-envoy-operator.io
+  - ""
   resources:
-  - authentikproviders
-  - oidcpolicies
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
   verbs:
   - create
   - delete
@@ -20,10 +26,11 @@ rules:
 - apiGroups:
   - authentik-envoy-operator.io
   resources:
-  - authentikproviders/finalizers
-  - oidcpolicies/finalizers
+  - authentikproviders
   verbs:
-  - update
+  - get
+  - list
+  - watch
 - apiGroups:
   - authentik-envoy-operator.io
   resources:
@@ -33,3 +40,39 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - authentik-envoy-operator.io
+  resources:
+  - oidcpolicies
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - authentik-envoy-operator.io
+  resources:
+  - oidcpolicies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - gateway.envoyproxy.io
+  resources:
+  - securitypolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  verbs:
+  - get
+  - list
+  - watch

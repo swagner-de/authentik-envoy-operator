@@ -51,6 +51,16 @@ type OIDCConfig struct {
 	// If empty, it is derived from the first HTTPRoute's hostname.
 	RedirectURL string `json:"redirectURL,omitempty"`
 
+	// SigningKey is the name of the Authentik certificate keypair used to sign tokens.
+	// The controller resolves this to the keypair's UUID via the Authentik API.
+	// +kubebuilder:validation:Required
+	SigningKey string `json:"signingKey"`
+
+	// PropertyMappings is a list of Authentik scope mapping names to include in the provider.
+	// These control which claims (e.g., groups, email, profile) are included in tokens.
+	// The controller resolves names to UUIDs via the Authentik API.
+	PropertyMappings []string `json:"propertyMappings,omitempty"`
+
 	// CookieConfig defines cookie behavior.
 	CookieConfig *CookieConfig `json:"cookieConfig,omitempty"`
 }
@@ -77,6 +87,7 @@ type AuthentikStatus struct {
 	ApplicationSlug  string   `json:"applicationSlug,omitempty"`
 	ApplicationID    string   `json:"applicationID,omitempty"`
 	PolicyBindingIDs []string `json:"policyBindingIDs,omitempty"`
+	BoundGroups      []string `json:"boundGroups,omitempty"`
 }
 
 // SecurityPolicyRef tracks a created SecurityPolicy.

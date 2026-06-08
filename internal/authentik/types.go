@@ -16,9 +16,11 @@ type OAuth2ProviderRequest struct {
 	ClientID               string        `json:"client_id,omitempty"`
 	ClientSecret           string        `json:"client_secret,omitempty"`
 	RedirectURIs           []RedirectURI `json:"redirect_uris,omitempty"`
+	GrantTypes             []string      `json:"grant_types,omitempty"`
 	SubMode                string        `json:"sub_mode,omitempty"`
 	IssuerMode             string        `json:"issuer_mode,omitempty"`
 	IncludeClaimsInIDToken bool          `json:"include_claims_in_id_token,omitempty"`
+	SigningKey              string        `json:"signing_key,omitempty"`
 	PropertyMappings       []string      `json:"property_mappings,omitempty"`
 }
 

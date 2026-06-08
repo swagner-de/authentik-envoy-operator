@@ -35,6 +35,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	egv1alpha1 "github.com/envoyproxy/gateway/api/v1alpha1"
+	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
+
 	authentikenvoyoperatoriov1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/controller"
 	webhookv1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/internal/webhook/v1alpha1"
@@ -48,7 +51,8 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
+	utilruntime.Must(gwapiv1.Install(scheme))
+	utilruntime.Must(egv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(authentikenvoyoperatoriov1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -103,22 +107,22 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	// Initial webhook TLS options
-	webhookTLSOpts := tlsOpts
-	webhookServerOptions := webhook.Options{
-		TLSOpts: webhookTLSOpts,
+	// Webhook server setup (conditional)
+	var webhookServer webhook.Server
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		webhookTLSOpts := tlsOpts
+		webhookServerOptions := webhook.Options{
+			TLSOpts: webhookTLSOpts,
+		}
+		if len(webhookCertPath) > 0 {
+			setupLog.Info("Initializing webhook certificate watcher using provided certificates",
+				"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+			webhookServerOptions.CertDir = webhookCertPath
+			webhookServerOptions.CertName = webhookCertName
+			webhookServerOptions.KeyName = webhookCertKey
+		}
+		webhookServer = webhook.NewServer(webhookServerOptions)
 	}
-
-	if len(webhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
-
-		webhookServerOptions.CertDir = webhookCertPath
-		webhookServerOptions.CertName = webhookCertName
-		webhookServerOptions.KeyName = webhookCertKey
-	}
-
-	webhookServer := webhook.NewServer(webhookServerOptions)
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:

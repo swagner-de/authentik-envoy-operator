@@ -20,7 +20,12 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
+            {{- if .Values.leaderElection.enabled }}
             - --leader-elect
+            {{- end }}
+          env:
+            - name: ENABLE_WEBHOOKS
+              value: "{{ .Values.webhook.enabled }}"
           ports:
             - name: metrics
               containerPort: 8080
