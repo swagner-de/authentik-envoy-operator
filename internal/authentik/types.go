@@ -30,9 +30,12 @@ type OAuth2Provider struct {
 	Name                    string        `json:"name"`
 	ClientID                string        `json:"client_id"`
 	ClientSecret            string        `json:"client_secret"`
+	ClientType              string        `json:"client_type"`
 	AuthorizationFlow       string        `json:"authorization_flow"`
 	InvalidationFlow        string        `json:"invalidation_flow"`
 	RedirectURIs            []RedirectURI `json:"redirect_uris"`
+	SigningKey               string        `json:"signing_key"`
+	PropertyMappings        []string      `json:"property_mappings"`
 	AssignedApplicationSlug string        `json:"assigned_application_slug"`
 }
 
@@ -47,10 +50,11 @@ type ApplicationRequest struct {
 
 // Application is the response from the application API.
 type Application struct {
-	PK       string `json:"pk"`
-	Name     string `json:"name"`
-	Slug     string `json:"slug"`
-	Provider int    `json:"provider"`
+	PK               string `json:"pk"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Provider         int    `json:"provider"`
+	PolicyEngineMode string `json:"policy_engine_mode"`
 }
 
 // PolicyBindingRequest is the request body for creating a policy binding.

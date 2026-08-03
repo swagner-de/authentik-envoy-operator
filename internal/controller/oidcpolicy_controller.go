@@ -199,13 +199,28 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	var oauthProvider *authentik.OAuth2Provider
 	if policy.Status.Authentik != nil && policy.Status.Authentik.ProviderID > 0 {
-		var err error
-		oauthProvider, err = apiClient.UpdateProvider(ctx, policy.Status.Authentik.ProviderID, providerReq)
+		current, err := apiClient.GetProvider(ctx, policy.Status.Authentik.ProviderID)
 		if err != nil {
-			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "provider_update").Inc()
-			return ctrl.Result{}, fmt.Errorf("updating Authentik provider: %w", err)
+			if !isNotFound(err) {
+				appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "provider_get").Inc()
+				return ctrl.Result{}, fmt.Errorf("getting Authentik provider: %w", err)
+			}
+			// Provider was deleted out-of-band, recreate it
+			current = nil
 		}
-	} else {
+		if current != nil {
+			if authentik.ProviderNeedsUpdate(current, providerReq) {
+				oauthProvider, err = apiClient.UpdateProvider(ctx, policy.Status.Authentik.ProviderID, providerReq)
+				if err != nil {
+					appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "provider_update").Inc()
+					return ctrl.Result{}, fmt.Errorf("updating Authentik provider: %w", err)
+				}
+			} else {
+				oauthProvider = current
+			}
+		}
+	}
+	if oauthProvider == nil {
 		var err error
 		oauthProvider, err = apiClient.CreateProvider(ctx, providerReq)
 		if err != nil {
@@ -224,16 +239,21 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	var app *authentik.Application
 	if policy.Status.Authentik != nil && policy.Status.Authentik.ApplicationSlug != "" {
-		var updateErr error
-		app, updateErr = apiClient.UpdateApplication(ctx, policy.Status.Authentik.ApplicationSlug, appReq)
-		if updateErr != nil {
-			appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "application_update").Inc()
-			// Only fallback to create if the application doesn't exist (404)
-			var apiErr *authentik.APIError
-			if !errors.As(updateErr, &apiErr) || apiErr.StatusCode != 404 {
-				return ctrl.Result{}, fmt.Errorf("updating Authentik application: %w", updateErr)
+		current, err := apiClient.GetApplication(ctx, policy.Status.Authentik.ApplicationSlug)
+		if err != nil {
+			if !isNotFound(err) {
+				appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "application_get").Inc()
+				return ctrl.Result{}, fmt.Errorf("getting Authentik application: %w", err)
 			}
 			log.Info("Application not found, will create", "slug", policy.Status.Authentik.ApplicationSlug)
+		} else if authentik.ApplicationNeedsUpdate(current, appReq) {
+			app, err = apiClient.UpdateApplication(ctx, policy.Status.Authentik.ApplicationSlug, appReq)
+			if err != nil {
+				appmetrics.ReconcileErrors.WithLabelValues(req.Name, req.Namespace, "application_update").Inc()
+				return ctrl.Result{}, fmt.Errorf("updating Authentik application: %w", err)
+			}
+		} else {
+			app = current
 		}
 	}
 	if app == nil {
@@ -246,23 +266,37 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// Step 4: Reconcile PolicyBindings
-	// Only recreate bindings if the desired groups changed
-	desiredGroups := make([]string, len(policy.Spec.OIDC.AllowedGroups))
-	copy(desiredGroups, policy.Spec.OIDC.AllowedGroups)
+	// Compare actual bindings in Authentik against desired state
+	desiredGroupUUIDs := make([]string, 0, len(policy.Spec.OIDC.AllowedGroups))
+	for _, groupName := range policy.Spec.OIDC.AllowedGroups {
+		desiredGroupUUIDs = append(desiredGroupUUIDs, groupUUIDs[groupName])
+	}
 
 	var bindingIDs []string
-	needsBindingRecreate := policy.Status.Authentik == nil ||
-		len(policy.Status.Authentik.PolicyBindingIDs) == 0 ||
-		!stringSliceEqual(policy.Status.Authentik.BoundGroups, desiredGroups)
+	needsBindingRecreate := true
+
+	currentBindings, err := apiClient.ListPolicyBindings(ctx, app.PK)
+	if err != nil {
+		log.Error(err, "failed to list policy bindings, will recreate")
+	} else {
+		currentGroupUUIDs := make([]string, 0, len(currentBindings))
+		for _, b := range currentBindings {
+			currentGroupUUIDs = append(currentGroupUUIDs, b.Group)
+		}
+		if authentik.StringSetEqual(currentGroupUUIDs, desiredGroupUUIDs) {
+			needsBindingRecreate = false
+			for _, b := range currentBindings {
+				bindingIDs = append(bindingIDs, b.PK)
+			}
+		}
+	}
 
 	if needsBindingRecreate {
 		log.Info("Recreating policy bindings", "reason", "groups changed or no existing bindings")
-		// Delete stale bindings from previous reconcile
-		if policy.Status.Authentik != nil {
-			for _, bindingID := range policy.Status.Authentik.PolicyBindingIDs {
-				if err := apiClient.DeletePolicyBinding(ctx, bindingID); err != nil {
-					log.Error(err, "failed to delete stale policy binding", "id", bindingID)
-				}
+		// Delete stale bindings
+		for _, b := range currentBindings {
+			if err := apiClient.DeletePolicyBinding(ctx, b.PK); err != nil {
+				log.Error(err, "failed to delete stale policy binding", "id", b.PK)
 			}
 		}
 
@@ -374,7 +408,7 @@ func (r *OIDCPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		ApplicationSlug:  appSlug,
 		ApplicationID:    app.PK,
 		PolicyBindingIDs: bindingIDs,
-		BoundGroups:      desiredGroups,
+		BoundGroups:      policy.Spec.OIDC.AllowedGroups,
 	}
 	policy.Status.SecurityPolicies = secPolicyRefs
 	policy.Status.SecretName = secretName
@@ -497,23 +531,6 @@ func (r *OIDCPolicyReconciler) mapHTTPRouteToPolicies(ctx context.Context, obj c
 		}
 	}
 	return requests
-}
-
-func stringSliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	counts := make(map[string]int, len(a))
-	for _, s := range a {
-		counts[s]++
-	}
-	for _, s := range b {
-		counts[s]--
-		if counts[s] < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func isNotFound(err error) bool {
