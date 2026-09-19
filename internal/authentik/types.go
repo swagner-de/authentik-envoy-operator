@@ -1,5 +1,10 @@
 package authentik
 
+import (
+	"fmt"
+	"strings"
+)
+
 // RedirectURI represents a redirect URI entry.
 type RedirectURI struct {
 	MatchingMode    string `json:"matching_mode"`
@@ -19,9 +24,12 @@ type OAuth2ProviderRequest struct {
 	GrantTypes             []string      `json:"grant_types,omitempty"`
 	SubMode                string        `json:"sub_mode,omitempty"`
 	IssuerMode             string        `json:"issuer_mode,omitempty"`
-	IncludeClaimsInIDToken bool          `json:"include_claims_in_id_token,omitempty"`
-	SigningKey              string        `json:"signing_key,omitempty"`
+	IncludeClaimsInIDToken bool          `json:"include_claims_in_id_token"`
+	SigningKey             string        `json:"signing_key,omitempty"`
 	PropertyMappings       []string      `json:"property_mappings,omitempty"`
+	AccessTokenValidity    string        `json:"access_token_validity,omitempty"`
+	RefreshTokenValidity   string        `json:"refresh_token_validity,omitempty"`
+	AccessCodeValidity     string        `json:"access_code_validity,omitempty"`
 }
 
 // OAuth2Provider is the response from the OAuth2 provider API.
@@ -34,9 +42,16 @@ type OAuth2Provider struct {
 	AuthorizationFlow       string        `json:"authorization_flow"`
 	InvalidationFlow        string        `json:"invalidation_flow"`
 	RedirectURIs            []RedirectURI `json:"redirect_uris"`
-	SigningKey               string        `json:"signing_key"`
+	SigningKey              string        `json:"signing_key"`
 	PropertyMappings        []string      `json:"property_mappings"`
 	AssignedApplicationSlug string        `json:"assigned_application_slug"`
+	GrantTypes              []string      `json:"grant_types"`
+	SubMode                 string        `json:"sub_mode"`
+	IssuerMode              string        `json:"issuer_mode"`
+	IncludeClaimsInIDToken  bool          `json:"include_claims_in_id_token"`
+	AccessTokenValidity     string        `json:"access_token_validity"`
+	RefreshTokenValidity    string        `json:"refresh_token_validity"`
+	AccessCodeValidity      string        `json:"access_code_validity"`
 }
 
 // ApplicationRequest is the request body for creating/updating an application.
@@ -46,6 +61,11 @@ type ApplicationRequest struct {
 	Provider         int    `json:"provider,omitempty"`
 	PolicyEngineMode string `json:"policy_engine_mode,omitempty"`
 	MetaLaunchURL    string `json:"meta_launch_url,omitempty"`
+	MetaDescription  string `json:"meta_description,omitempty"`
+	MetaPublisher    string `json:"meta_publisher,omitempty"`
+	MetaIcon         string `json:"meta_icon,omitempty"`
+	OpenInNewTab     bool   `json:"open_in_new_tab"`
+	Group            string `json:"group,omitempty"`
 }
 
 // Application is the response from the application API.
@@ -55,6 +75,12 @@ type Application struct {
 	Slug             string `json:"slug"`
 	Provider         int    `json:"provider"`
 	PolicyEngineMode string `json:"policy_engine_mode"`
+	MetaLaunchURL    string `json:"meta_launch_url"`
+	MetaDescription  string `json:"meta_description"`
+	MetaPublisher    string `json:"meta_publisher"`
+	MetaIcon         string `json:"meta_icon"`
+	OpenInNewTab     bool   `json:"open_in_new_tab"`
+	Group            string `json:"group"`
 }
 
 // PolicyBindingRequest is the request body for creating a policy binding.
@@ -103,11 +129,22 @@ type APIError struct {
 	StatusCode int
 	Detail     string              `json:"detail"`
 	Errors     map[string][]string `json:"errors,omitempty"`
+	// Body is the raw (possibly truncated) response body, retained so validation
+	// errors that don't fit Detail/Errors (e.g. DRF field errors keyed by field
+	// name, or non-JSON gateway errors) still surface in Error().
+	Body string `json:"-"`
 }
 
 func (e *APIError) Error() string {
-	if e.Detail != "" {
-		return e.Detail
+	msg := e.Detail
+	if msg == "" && len(e.Errors) > 0 {
+		msg = fmt.Sprintf("%v", e.Errors)
 	}
-	return "authentik API error"
+	if msg == "" {
+		msg = strings.TrimSpace(e.Body)
+	}
+	if msg == "" {
+		msg = "unknown error"
+	}
+	return fmt.Sprintf("authentik API error (status %d): %s", e.StatusCode, msg)
 }

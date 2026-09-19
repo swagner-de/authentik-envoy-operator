@@ -7,15 +7,32 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	egv1alpha1 "github.com/envoyproxy/gateway/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
 )
+
+// newTestScheme builds a runtime.Scheme registered with the types the
+// controller tests need. Relocated here from the deleted OIDCPolicy tests
+// because the AuthentikProvider tests are its remaining consumer.
+func newTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(s))
+	utilruntime.Must(v1alpha1.AddToScheme(s))
+	utilruntime.Must(gwapiv1.Install(s))
+	utilruntime.Must(egv1alpha1.AddToScheme(s))
+	return s
+}
 
 func fakeAuthentikFlowServer() *httptest.Server {
 	mux := http.NewServeMux()

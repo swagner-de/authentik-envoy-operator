@@ -35,7 +35,7 @@ rules:
   - authentik-envoy-operator.io
   resources:
   - authentikproviders/status
-  - oidcpolicies/status
+  - oidcapplications/status
   verbs:
   - get
   - patch
@@ -43,7 +43,7 @@ rules:
 - apiGroups:
   - authentik-envoy-operator.io
   resources:
-  - oidcpolicies
+  - oidcapplications
   verbs:
   - get
   - list
@@ -53,7 +53,7 @@ rules:
 - apiGroups:
   - authentik-envoy-operator.io
   resources:
-  - oidcpolicies/finalizers
+  - oidcapplications/finalizers
   verbs:
   - update
 - apiGroups:

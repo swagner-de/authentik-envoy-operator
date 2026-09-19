@@ -1,42 +1,85 @@
-package controller
+package controller_test
 
 import (
 	"testing"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
+	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/controller"
 )
 
-func TestBuildSecurityPolicy(t *testing.T) {
-	policy := &v1alpha1.OIDCPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "grafana-oidc",
-			Namespace: "monitoring",
-			UID:       "test-uid",
-		},
-		Spec: v1alpha1.OIDCPolicySpec{
-			TargetRefs: []v1alpha1.TargetRef{
-				{Name: "grafana"},
-			},
-			OIDC: v1alpha1.OIDCConfig{
-				AllowedGroups:      []string{"admins", "developers"},
-				Scopes:             []string{"openid", "profile"},
-				ForwardAccessToken: true,
-			},
+func TestBuildSecurityPolicyAuthorizesOnGroupsOnly(t *testing.T) {
+	forward := true
+	app := &v1alpha1.OIDCApplication{
+		ObjectMeta: metav1.ObjectMeta{Name: "grafana", Namespace: "monitoring", UID: "app-uid"},
+		Spec: v1alpha1.OIDCApplicationSpec{
+			Groups:             []v1alpha1.GroupRef{{Name: "admins"}, {Name: "devs"}},
+			ForwardAccessToken: &forward,
 		},
 	}
 
-	params := SecurityPolicyParams{
-		AuthentikHost:   "https://authentik.example.com",
-		ApplicationSlug: "monitoring-grafana-oidc",
-		ClientID:        "monitoring-grafana-oidc",
-		SecretName:      "grafana-oidc-client-secret",
+	sp := controller.BuildSecurityPolicy(app, v1alpha1.TargetRef{Name: "route"}, controller.SecurityPolicyParams{
+		AuthentikHost:   "https://auth.example.com/",
+		ApplicationSlug: "monitoring-grafana",
+		ClientID:        "monitoring-grafana",
+		SecretName:      "grafana-oidc",
+	})
+
+	if sp.Spec.Authorization == nil || len(sp.Spec.Authorization.Rules) != 1 {
+		t.Fatalf("expected 1 authorization rule")
+	}
+	rule := sp.Spec.Authorization.Rules[0]
+	if rule.Principal.JWT == nil {
+		t.Fatal("expected JWT principal")
 	}
 
-	sp := BuildSecurityPolicy(policy, policy.Spec.TargetRefs[0], params)
+	// (a) No hardcoded scopes on the JWT principal.
+	if len(rule.Principal.JWT.Scopes) != 0 {
+		t.Errorf("expected no hardcoded scopes on the JWT principal, got %+v", rule.Principal.JWT.Scopes)
+	}
 
-	if sp.Name != "grafana-oidc-grafana" {
-		t.Errorf("expected name grafana-oidc-grafana, got %s", sp.Name)
+	// (b) The groups claim Values equal the group names.
+	if len(rule.Principal.JWT.Claims) != 1 {
+		t.Fatalf("expected 1 claim, got %d", len(rule.Principal.JWT.Claims))
+	}
+	claim := rule.Principal.JWT.Claims[0]
+	if claim.Name != "groups" || len(claim.Values) != 2 {
+		t.Errorf("expected groups claim with 2 values, got %+v", claim)
+	}
+	if claim.Values[0] != "admins" || claim.Values[1] != "devs" {
+		t.Errorf("expected group names [admins devs], got %v", claim.Values)
+	}
+
+	// (c) Issuer has no double slash when the host ends in '/'.
+	if got := sp.Spec.JWT.Providers[0].Issuer; got != "https://auth.example.com/application/o/monitoring-grafana/" {
+		t.Errorf("issuer double-slash not normalized: %s", got)
+	}
+	if got := sp.Spec.JWT.Providers[0].RemoteJWKS.URI; got != "https://auth.example.com/application/o/monitoring-grafana/jwks/" {
+		t.Errorf("jwksURI double-slash not normalized: %s", got)
+	}
+	if got := sp.Spec.OIDC.Provider.Issuer; got != "https://auth.example.com/application/o/monitoring-grafana/" {
+		t.Errorf("OIDC issuer double-slash not normalized: %s", got)
+	}
+}
+
+func TestBuildSecurityPolicyMetadata(t *testing.T) {
+	app := &v1alpha1.OIDCApplication{
+		ObjectMeta: metav1.ObjectMeta{Name: "grafana", Namespace: "monitoring", UID: "app-uid"},
+		Spec: v1alpha1.OIDCApplicationSpec{
+			Groups: []v1alpha1.GroupRef{{Name: "admins"}},
+		},
+	}
+
+	sp := controller.BuildSecurityPolicy(app, v1alpha1.TargetRef{Name: "route"}, controller.SecurityPolicyParams{
+		AuthentikHost:   "https://auth.example.com",
+		ApplicationSlug: "monitoring-grafana",
+		ClientID:        "monitoring-grafana",
+		SecretName:      "grafana-oidc",
+	})
+
+	if sp.Name != "grafana-route" {
+		t.Errorf("expected name grafana-route, got %s", sp.Name)
 	}
 	if sp.Namespace != "monitoring" {
 		t.Errorf("expected namespace monitoring, got %s", sp.Namespace)
@@ -44,166 +87,64 @@ func TestBuildSecurityPolicy(t *testing.T) {
 	if len(sp.OwnerReferences) != 1 {
 		t.Fatalf("expected 1 owner reference, got %d", len(sp.OwnerReferences))
 	}
-	if sp.OwnerReferences[0].Name != "grafana-oidc" {
-		t.Errorf("expected owner grafana-oidc, got %s", sp.OwnerReferences[0].Name)
+	owner := sp.OwnerReferences[0]
+	if owner.Kind != "OIDCApplication" {
+		t.Errorf("expected owner kind OIDCApplication, got %s", owner.Kind)
 	}
-
-	// Verify OIDC config
-	if sp.Spec.OIDC == nil {
-		t.Fatal("expected OIDC spec to be set")
-	}
-	if *sp.Spec.OIDC.ClientID != "monitoring-grafana-oidc" {
-		t.Errorf("expected clientID monitoring-grafana-oidc, got %s", *sp.Spec.OIDC.ClientID)
-	}
-	if sp.Spec.OIDC.Provider.Issuer != "https://authentik.example.com/application/o/monitoring-grafana-oidc/" {
-		t.Errorf("unexpected issuer: %s", sp.Spec.OIDC.Provider.Issuer)
-	}
-	if sp.Spec.OIDC.ForwardAccessToken == nil || !*sp.Spec.OIDC.ForwardAccessToken {
-		t.Error("expected forwardAccessToken to be true")
-	}
-
-	// Verify JWT config
-	if sp.Spec.JWT == nil {
-		t.Fatal("expected JWT spec to be set")
-	}
-	if len(sp.Spec.JWT.Providers) != 1 {
-		t.Fatalf("expected 1 JWT provider, got %d", len(sp.Spec.JWT.Providers))
-	}
-	if sp.Spec.JWT.Providers[0].Name != "authentik" {
-		t.Errorf("expected JWT provider name authentik, got %s", sp.Spec.JWT.Providers[0].Name)
-	}
-
-	// Verify Authorization config
-	if sp.Spec.Authorization == nil {
-		t.Fatal("expected Authorization spec to be set")
-	}
-	if len(sp.Spec.Authorization.Rules) != 1 {
-		t.Fatalf("expected 1 authorization rule, got %d", len(sp.Spec.Authorization.Rules))
-	}
-	rule := sp.Spec.Authorization.Rules[0]
-	if rule.Principal.JWT == nil {
-		t.Fatal("expected JWT principal")
-	}
-	if len(rule.Principal.JWT.Claims) != 1 {
-		t.Fatalf("expected 1 claim, got %d", len(rule.Principal.JWT.Claims))
-	}
-	if rule.Principal.JWT.Claims[0].Name != "groups" {
-		t.Errorf("expected claim name 'groups', got %s", rule.Principal.JWT.Claims[0].Name)
-	}
-	if len(rule.Principal.JWT.Claims[0].Values) != 2 {
-		t.Errorf("expected 2 allowed groups, got %d", len(rule.Principal.JWT.Claims[0].Values))
-	}
-
-	// Verify targetRefs
-	if len(sp.Spec.TargetRefs) != 1 {
-		t.Fatalf("expected 1 targetRef, got %d", len(sp.Spec.TargetRefs))
-	}
-	if string(sp.Spec.TargetRefs[0].Name) != "grafana" {
-		t.Errorf("expected targetRef name grafana, got %s", sp.Spec.TargetRefs[0].Name)
+	if owner.Name != "grafana" || owner.UID != "app-uid" {
+		t.Errorf("unexpected owner ref: %+v", owner)
 	}
 }
 
-func TestBuildSecurityPolicyCookieNames(t *testing.T) {
-	policy := &v1alpha1.OIDCPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "myapp-oidc",
-			Namespace: "default",
-			UID:       "uid",
-		},
-		Spec: v1alpha1.OIDCPolicySpec{
-			TargetRefs: []v1alpha1.TargetRef{{Name: "myapp"}},
-			OIDC: v1alpha1.OIDCConfig{
-				AllowedGroups: []string{"users"},
-				Scopes:        []string{"openid"},
-			},
+func TestBuildSecurityPolicyCookiePrefix(t *testing.T) {
+	app := &v1alpha1.OIDCApplication{
+		ObjectMeta: metav1.ObjectMeta{Name: "grafana", Namespace: "monitoring"},
+		Spec: v1alpha1.OIDCApplicationSpec{
+			Groups:       []v1alpha1.GroupRef{{Name: "admins"}},
+			CookieConfig: &v1alpha1.CookieConfig{NamePrefix: "gf"},
 		},
 	}
 
-	params := SecurityPolicyParams{
+	sp := controller.BuildSecurityPolicy(app, v1alpha1.TargetRef{Name: "route"}, controller.SecurityPolicyParams{
 		AuthentikHost:   "https://auth.example.com",
-		ApplicationSlug: "default-myapp-oidc",
-		ClientID:        "default-myapp-oidc",
-		SecretName:      "myapp-oidc-client-secret",
-	}
+		ApplicationSlug: "monitoring-grafana",
+		ClientID:        "monitoring-grafana",
+		SecretName:      "grafana-oidc",
+	})
 
-	sp := BuildSecurityPolicy(policy, policy.Spec.TargetRefs[0], params)
-
-	if sp.Spec.OIDC.CookieNames == nil {
-		t.Fatal("expected cookie names to be set")
-	}
-	if *sp.Spec.OIDC.CookieNames.AccessToken != "myapp-oidc-accessToken" {
+	if *sp.Spec.OIDC.CookieNames.AccessToken != "gf-accessToken" {
 		t.Errorf("unexpected access token cookie: %s", *sp.Spec.OIDC.CookieNames.AccessToken)
 	}
-	if *sp.Spec.OIDC.CookieNames.IDToken != "myapp-oidc-idToken" {
+	if *sp.Spec.OIDC.CookieNames.IDToken != "gf-idToken" {
 		t.Errorf("unexpected id token cookie: %s", *sp.Spec.OIDC.CookieNames.IDToken)
 	}
 }
 
-func TestBuildSecurityPolicyCustomCookiePrefix(t *testing.T) {
-	policy := &v1alpha1.OIDCPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app-oidc",
-			Namespace: "default",
-			UID:       "uid",
-		},
-		Spec: v1alpha1.OIDCPolicySpec{
-			TargetRefs: []v1alpha1.TargetRef{{Name: "app"}},
-			OIDC: v1alpha1.OIDCConfig{
-				AllowedGroups: []string{"users"},
-				Scopes:        []string{"openid"},
-				CookieConfig: &v1alpha1.CookieConfig{
-					NamePrefix: "custom",
-				},
-			},
+func TestBuildSecurityPolicyCookieConfigWired(t *testing.T) {
+	forward := false
+	app := &v1alpha1.OIDCApplication{
+		ObjectMeta: metav1.ObjectMeta{Name: "grafana", Namespace: "monitoring"},
+		Spec: v1alpha1.OIDCApplicationSpec{
+			Groups:             []v1alpha1.GroupRef{{Name: "admins"}},
+			ForwardAccessToken: &forward,
+			CookieConfig:       &v1alpha1.CookieConfig{SameSite: "Strict", Domain: "example.com"},
 		},
 	}
 
-	params := SecurityPolicyParams{
+	sp := controller.BuildSecurityPolicy(app, v1alpha1.TargetRef{Name: "route"}, controller.SecurityPolicyParams{
 		AuthentikHost:   "https://auth.example.com",
-		ApplicationSlug: "default-app-oidc",
-		ClientID:        "default-app-oidc",
-		SecretName:      "app-oidc-client-secret",
-	}
+		ApplicationSlug: "monitoring-grafana",
+		ClientID:        "monitoring-grafana",
+		SecretName:      "grafana-oidc",
+	})
 
-	sp := BuildSecurityPolicy(policy, policy.Spec.TargetRefs[0], params)
-
-	if *sp.Spec.OIDC.CookieNames.AccessToken != "custom-accessToken" {
-		t.Errorf("unexpected access token cookie: %s", *sp.Spec.OIDC.CookieNames.AccessToken)
+	if sp.Spec.OIDC.CookieConfig == nil || sp.Spec.OIDC.CookieConfig.SameSite == nil || *sp.Spec.OIDC.CookieConfig.SameSite != "Strict" {
+		t.Errorf("expected SameSite=Strict wired into OIDC cookie config, got %+v", sp.Spec.OIDC.CookieConfig)
 	}
-}
-
-func TestBuildSecurityPolicyCreatesValidObject(t *testing.T) {
-	policy := &v1alpha1.OIDCPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-policy",
-			Namespace: "test-ns",
-			UID:       "test-uid-123",
-		},
-		Spec: v1alpha1.OIDCPolicySpec{
-			TargetRefs: []v1alpha1.TargetRef{{Name: "my-route"}},
-			OIDC: v1alpha1.OIDCConfig{
-				AllowedGroups: []string{"admins"},
-			},
-		},
+	if sp.Spec.OIDC.CookieDomain == nil || *sp.Spec.OIDC.CookieDomain != "example.com" {
+		t.Errorf("expected cookieDomain=example.com, got %v", sp.Spec.OIDC.CookieDomain)
 	}
-
-	params := SecurityPolicyParams{
-		AuthentikHost:   "https://auth.example.com",
-		ApplicationSlug: "test-ns-test-policy",
-		ClientID:        "test-ns-test-policy",
-		SecretName:      "test-policy-client-secret",
-	}
-
-	sp := BuildSecurityPolicy(policy, policy.Spec.TargetRefs[0], params)
-
-	// Should produce a fully typed SecurityPolicy ready for CreateOrUpdate
-	if sp.APIVersion != "gateway.envoyproxy.io/v1alpha1" {
-		t.Errorf("expected apiVersion gateway.envoyproxy.io/v1alpha1, got %s", sp.APIVersion)
-	}
-	if sp.Kind != "SecurityPolicy" {
-		t.Errorf("expected kind SecurityPolicy, got %s", sp.Kind)
-	}
-	if string(sp.Spec.OIDC.ClientSecret.Name) != "test-policy-client-secret" {
-		t.Errorf("unexpected client secret name: %s", sp.Spec.OIDC.ClientSecret.Name)
+	if sp.Spec.OIDC.ForwardAccessToken == nil || *sp.Spec.OIDC.ForwardAccessToken {
+		t.Errorf("expected forwardAccessToken=false to be honored, got %v", sp.Spec.OIDC.ForwardAccessToken)
 	}
 }

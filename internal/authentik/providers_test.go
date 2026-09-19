@@ -110,3 +110,36 @@ func TestDeleteProvider(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestGetProviderByNameExact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"pagination":{"count":2},"results":[` +
+			`{"pk":9,"name":"ns-other"},{"pk":7,"name":"ns-app"}]}`))
+	}))
+	defer server.Close()
+	client := authentik.NewClient(server.URL, "token")
+	p, err := client.GetProviderByName(context.Background(), "ns-app")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p == nil || p.PK != 7 {
+		t.Fatalf("expected pk 7, got %+v", p)
+	}
+}
+
+func TestGetProviderByNameAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"pagination":{"count":0},"results":[]}`))
+	}))
+	defer server.Close()
+	client := authentik.NewClient(server.URL, "token")
+	p, err := client.GetProviderByName(context.Background(), "ns-app")
+	if err != nil {
+		t.Fatalf("absent provider must not error: %v", err)
+	}
+	if p != nil {
+		t.Fatalf("expected nil provider, got %+v", p)
+	}
+}

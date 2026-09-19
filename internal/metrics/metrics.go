@@ -8,8 +8,8 @@ import (
 var (
 	ReconcileDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "oidcpolicy_reconcile_duration_seconds",
-			Help:    "Time spent reconciling OIDCPolicy resources",
+			Name:    "oidcapplication_reconcile_duration_seconds",
+			Help:    "Time spent reconciling OIDCApplication resources",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"name", "namespace"},
@@ -17,7 +17,7 @@ var (
 
 	ReconcileErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "oidcpolicy_reconcile_errors_total",
+			Name: "oidcapplication_reconcile_errors_total",
 			Help: "Total reconciliation errors by error type",
 		},
 		[]string{"name", "namespace", "error_type"},
@@ -25,8 +25,8 @@ var (
 
 	PolicyStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "oidcpolicy_status",
-			Help: "Current status of OIDCPolicy resources (1=Ready, 0=NotReady)",
+			Name: "oidcapplication_status",
+			Help: "Current status of OIDCApplication resources (1=Ready, 0=NotReady)",
 		},
 		[]string{"name", "namespace"},
 	)

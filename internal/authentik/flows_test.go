@@ -40,8 +40,11 @@ func TestGetFlowBySlugNotFound(t *testing.T) {
 	defer server.Close()
 
 	client := authentik.NewClient(server.URL, "token")
-	_, err := client.GetFlowBySlug(context.Background(), "nonexistent")
-	if err == nil {
-		t.Fatal("expected error for missing flow")
+	flow, err := client.GetFlowBySlug(context.Background(), "nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if flow != nil {
+		t.Fatalf("expected nil flow for absent slug, got %+v", flow)
 	}
 }

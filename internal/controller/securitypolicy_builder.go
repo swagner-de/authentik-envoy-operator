@@ -2,11 +2,13 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 	egv1alpha1 "github.com/envoyproxy/gateway/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 )
 
 // SecurityPolicyParams holds the dynamic values needed to build a SecurityPolicy.
@@ -18,28 +20,23 @@ type SecurityPolicyParams struct {
 }
 
 // BuildSecurityPolicy constructs a typed Envoy Gateway SecurityPolicy for a single targetRef.
-func BuildSecurityPolicy(policy *v1alpha1.OIDCPolicy, target v1alpha1.TargetRef, params SecurityPolicyParams) *egv1alpha1.SecurityPolicy {
-	cookiePrefix := policy.Name
-	if policy.Spec.OIDC.CookieConfig != nil && policy.Spec.OIDC.CookieConfig.NamePrefix != "" {
-		cookiePrefix = policy.Spec.OIDC.CookieConfig.NamePrefix
-	}
+func BuildSecurityPolicy(app *v1alpha1.OIDCApplication, target v1alpha1.TargetRef, params SecurityPolicyParams) *egv1alpha1.SecurityPolicy {
+	cookiePrefix := app.CookiePrefix()
 
-	issuer := fmt.Sprintf("%s/application/o/%s/", params.AuthentikHost, params.ApplicationSlug)
-	jwksURI := fmt.Sprintf("%s/application/o/%s/jwks/", params.AuthentikHost, params.ApplicationSlug)
+	host := strings.TrimRight(params.AuthentikHost, "/")
+	issuer := fmt.Sprintf("%s/application/o/%s/", host, params.ApplicationSlug)
+	jwksURI := fmt.Sprintf("%s/application/o/%s/jwks/", host, params.ApplicationSlug)
 
 	accessTokenCookie := fmt.Sprintf("%s-accessToken", cookiePrefix)
 	idTokenCookie := fmt.Sprintf("%s-idToken", cookiePrefix)
 
-	forwardAccessToken := policy.Spec.OIDC.ForwardAccessToken
+	forwardAccessToken := app.ForwardAccessTokenEnabled()
 
-	scopes := policy.Spec.OIDC.Scopes
-	if len(scopes) == 0 {
-		scopes = []string{"openid", "profile"}
-	}
+	scopes := app.EffectiveScopes()
 
 	group := gwapiv1.Group("gateway.networking.k8s.io")
 	kind := gwapiv1.Kind("HTTPRoute")
-	ns := gwapiv1.Namespace(policy.Namespace)
+	ns := gwapiv1.Namespace(app.Namespace)
 	secretGroup := gwapiv1.Group("")
 	secretKind := gwapiv1.Kind("Secret")
 
@@ -55,14 +52,14 @@ func BuildSecurityPolicy(policy *v1alpha1.OIDCPolicy, target v1alpha1.TargetRef,
 			Kind:       "SecurityPolicy",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", policy.Name, target.Name),
-			Namespace: policy.Namespace,
+			Name:      fmt.Sprintf("%s-%s", app.Name, target.Name),
+			Namespace: app.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion:         v1alpha1.GroupVersion.String(),
-					Kind:               "OIDCPolicy",
-					Name:               policy.Name,
-					UID:                policy.UID,
+					Kind:               "OIDCApplication",
+					Name:               app.Name,
+					UID:                app.UID,
 					Controller:         boolPtr(true),
 					BlockOwnerDeletion: boolPtr(true),
 				},
@@ -127,16 +124,27 @@ func BuildSecurityPolicy(policy *v1alpha1.OIDCPolicy, target v1alpha1.TargetRef,
 									{
 										Name:      "groups",
 										ValueType: &claimValueType,
-										Values:    policy.Spec.OIDC.AllowedGroups,
+										Values:    groupNames(app),
 									},
 								},
-								Scopes: []egv1alpha1.JWTScope{"profile"},
 							},
 						},
 					},
 				},
 			},
 		},
+	}
+
+	// Honor optional cookie hardening/scoping from the CR.
+	if cc := app.Spec.CookieConfig; cc != nil {
+		if cc.SameSite != "" {
+			sameSite := cc.SameSite
+			sp.Spec.OIDC.CookieConfig = &egv1alpha1.OIDCCookieConfig{SameSite: &sameSite}
+		}
+		if cc.Domain != "" {
+			domain := cc.Domain
+			sp.Spec.OIDC.CookieDomain = &domain
+		}
 	}
 
 	return sp

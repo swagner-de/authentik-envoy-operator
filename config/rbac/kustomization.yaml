@@ -22,9 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the authentik-envoy-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
-- oidcpolicy_admin_role.yaml
-- oidcpolicy_editor_role.yaml
-- oidcpolicy_viewer_role.yaml
+- oidcapplication_admin_role.yaml
+- oidcapplication_editor_role.yaml
+- oidcapplication_viewer_role.yaml
 - authentikprovider_admin_role.yaml
 - authentikprovider_editor_role.yaml
 - authentikprovider_viewer_role.yaml

@@ -14,7 +14,8 @@ type ScopeMapping struct {
 	ScopeName string `json:"scope_name"`
 }
 
-// GetScopeMappingByName looks up a scope mapping by its name.
+// GetScopeMappingByName looks up a scope mapping by its name. Returns (nil, nil)
+// when no mapping matches, so callers can distinguish absence from an API error.
 func (c *Client) GetScopeMappingByName(ctx context.Context, name string) (*ScopeMapping, error) {
 	path := fmt.Sprintf("/api/v3/propertymappings/provider/scope/?name=%s", url.QueryEscape(name))
 
@@ -23,9 +24,10 @@ func (c *Client) GetScopeMappingByName(ctx context.Context, name string) (*Scope
 		return nil, fmt.Errorf("fetching scope mapping %q: %w", name, err)
 	}
 
-	if len(resp.Results) == 0 {
-		return nil, fmt.Errorf("scope mapping %q not found", name)
+	for i := range resp.Results {
+		if resp.Results[i].Name == name {
+			return &resp.Results[i], nil
+		}
 	}
-
-	return &resp.Results[0], nil
+	return nil, nil
 }

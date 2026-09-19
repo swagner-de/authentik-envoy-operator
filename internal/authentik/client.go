@@ -52,7 +52,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, result a
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -60,7 +60,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, result a
 	}
 
 	if resp.StatusCode >= 400 {
-		apiErr := &APIError{StatusCode: resp.StatusCode}
+		apiErr := &APIError{StatusCode: resp.StatusCode, Body: truncate(string(respBody), 512)}
 		_ = json.Unmarshal(respBody, apiErr)
 		return apiErr
 	}
@@ -72,4 +72,13 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, result a
 	}
 
 	return nil
+}
+
+// truncate bounds a string to n bytes so a large/HTML error body can't bloat an
+// error message. It appends an ellipsis marker when truncation occurs.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…(truncated)"
 }

@@ -3,7 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/authentik-envoy-operator.io_authentikproviders.yaml
-- bases/authentik-envoy-operator.io_oidcpolicies.yaml
+- bases/authentik-envoy-operator.io_oidcapplications.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

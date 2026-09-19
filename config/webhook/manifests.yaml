@@ -10,9 +10,9 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-authentik-envoy-operator-io-v1alpha1-oidcpolicy
+      path: /validate-authentik-envoy-operator-io-v1alpha1-oidcapplication
   failurePolicy: Fail
-  name: voidcpolicy-v1alpha1.kb.io
+  name: voidcapplication-v1alpha1.kb.io
   rules:
   - apiGroups:
     - authentik-envoy-operator.io
@@ -22,5 +22,5 @@ webhooks:
     - CREATE
     - UPDATE
     resources:
-    - oidcpolicies
+    - oidcapplications
   sideEffects: None

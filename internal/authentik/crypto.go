@@ -13,7 +13,9 @@ type CertificateKeyPair struct {
 	Name string `json:"name"`
 }
 
-// GetCertificateKeyPairByName looks up a certificate keypair by name.
+// GetCertificateKeyPairByName looks up a certificate keypair by name. Returns
+// (nil, nil) when no keypair matches, so callers can distinguish absence from an
+// API error.
 func (c *Client) GetCertificateKeyPairByName(ctx context.Context, name string) (*CertificateKeyPair, error) {
 	path := fmt.Sprintf("/api/v3/crypto/certificatekeypairs/?has_key=true&name=%s", url.QueryEscape(name))
 
@@ -22,9 +24,10 @@ func (c *Client) GetCertificateKeyPairByName(ctx context.Context, name string) (
 		return nil, fmt.Errorf("fetching certificate keypair %q: %w", name, err)
 	}
 
-	if len(resp.Results) == 0 {
-		return nil, fmt.Errorf("certificate keypair %q not found", name)
+	for i := range resp.Results {
+		if resp.Results[i].Name == name {
+			return &resp.Results[i], nil
+		}
 	}
-
-	return &resp.Results[0], nil
+	return nil, nil
 }

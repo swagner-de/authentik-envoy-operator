@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 func (c *Client) CreateProvider(ctx context.Context, req OAuth2ProviderRequest) (*OAuth2Provider, error) {
@@ -38,4 +39,20 @@ func (c *Client) DeleteProvider(ctx context.Context, id int) error {
 		return fmt.Errorf("deleting provider %d: %w", id, err)
 	}
 	return nil
+}
+
+// GetProviderByName looks up an OAuth2 provider by exact name.
+// Returns (nil, nil) when no provider matches (used for orphan recovery).
+func (c *Client) GetProviderByName(ctx context.Context, name string) (*OAuth2Provider, error) {
+	path := fmt.Sprintf("/api/v3/providers/oauth2/?name=%s", url.QueryEscape(name))
+	var resp PaginatedResponse[OAuth2Provider]
+	if err := c.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return nil, fmt.Errorf("listing providers by name %q: %w", name, err)
+	}
+	for i := range resp.Results {
+		if resp.Results[i].Name == name {
+			return &resp.Results[i], nil
+		}
+	}
+	return nil, nil
 }

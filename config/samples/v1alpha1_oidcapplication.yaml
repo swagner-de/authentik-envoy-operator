@@ -1,0 +1,70 @@
+# Standalone: provision an Authentik application and a template-driven Secret for
+# an app that speaks OIDC natively (no Envoy in front).
+apiVersion: authentik-envoy-operator.io/v1alpha1
+kind: OIDCApplication
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  providerRef:
+    name: main
+  displayName: "Grafana"
+  signingKey: "authentik Self-signed Certificate"
+  propertyMappings:
+    - "authentik default OAuth Mapping: OpenID 'openid'"
+    - "authentik default OAuth Mapping: OpenID 'profile'"
+    - "authentik default OAuth Mapping: OpenID 'email'"
+  scopes:
+    - openid
+    - profile
+    - email
+  groups:
+    - name: grafana-admins
+      create: true
+      cleanup: true
+    - name: grafana-users
+      create: false
+  redirectURIs:
+    - "https://grafana.example.com/login/generic_oauth"
+  # Nonempty secretTemplate opts in to an application Secret. It defaults to
+  # grafana-oidc and contains exactly these keys.
+  secretTemplate:
+    GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "{{ .ClientID }}"
+    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "{{ .ClientSecret }}"
+    GF_AUTH_GENERIC_OAUTH_AUTH_URL: "{{ .AuthorizationEndpoint }}"
+    GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "{{ .TokenEndpoint }}"
+    GF_AUTH_GENERIC_OAUTH_API_URL: "{{ .UserinfoEndpoint }}"
+  appMeta:
+    launchURL: "https://grafana.example.com"
+    description: "Grafana dashboards"
+---
+# Envoy mode: same application, additionally fronted by Envoy Gateway. The
+# operator derives the /oauth2/callback redirect URI from the HTTPRoute's
+# hostnames, writes the fixed kibana-envoy-oidc Secret with only client-secret,
+# and builds a SecurityPolicy targeting the route and referencing that Secret.
+apiVersion: authentik-envoy-operator.io/v1alpha1
+kind: OIDCApplication
+metadata:
+  name: kibana
+  namespace: logging
+spec:
+  providerRef:
+    name: main
+  displayName: "Kibana"
+  signingKey: "authentik Self-signed Certificate"
+  propertyMappings:
+    - "authentik default OAuth Mapping: OpenID 'openid'"
+    - "authentik default OAuth Mapping: OpenID 'profile'"
+    - "authentik default OAuth Mapping: OpenID 'email'"
+  scopes:
+    - openid
+    - profile
+    - email
+  forwardAccessToken: true
+  groups:
+    - name: platform-admins
+      create: false
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kibana-route

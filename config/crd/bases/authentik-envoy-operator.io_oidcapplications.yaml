@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: oidcpolicies.authentik-envoy-operator.io
+  name: oidcapplications.authentik-envoy-operator.io
 spec:
   group: authentik-envoy-operator.io
   names:
-    kind: OIDCPolicy
-    listKind: OIDCPolicyList
-    plural: oidcpolicies
-    singular: oidcpolicy
+    kind: OIDCApplication
+    listKind: OIDCApplicationList
+    plural: oidcapplications
+    singular: oidcapplication
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -27,7 +27,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: OIDCPolicy defines OIDC protection for one or more HTTPRoutes.
+        description: OIDCApplication provisions an Authentik OAuth2 application, optionally
+          fronted by Envoy.
         properties:
           apiVersion:
             description: |-
@@ -47,108 +48,161 @@ spec:
           metadata:
             type: object
           spec:
-            description: OIDCPolicySpec defines the desired OIDC protection for HTTPRoutes.
+            description: OIDCApplicationSpec defines an Authentik application, optionally
+              fronted by Envoy.
             properties:
-              oidc:
-                description: OIDC defines the authentication configuration.
+              accessCodeValidity:
+                type: string
+              accessTokenValidity:
+                type: string
+              appMeta:
+                description: AppMeta holds Authentik application launcher metadata
+                  (passthrough).
                 properties:
-                  allowedGroups:
-                    description: |-
-                      AllowedGroups are the Authentik groups permitted to access the protected routes.
-                      At least one group is required.
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                  cookieConfig:
-                    description: CookieConfig defines cookie behavior.
-                    properties:
-                      domain:
-                        description: Domain sets the cookie domain. Empty means the
-                          browser uses the request domain.
-                        type: string
-                      namePrefix:
-                        description: NamePrefix is the prefix for cookie names. Defaults
-                          to the OIDCPolicy name.
-                        type: string
-                      sameSite:
-                        default: Lax
-                        description: SameSite attribute for cookies.
-                        enum:
-                        - Lax
-                        - Strict
-                        - None
-                        type: string
-                    type: object
-                  forwardAccessToken:
-                    default: true
-                    description: ForwardAccessToken passes the access token to upstream
-                      services.
+                  description:
+                    type: string
+                  group:
+                    type: string
+                  icon:
+                    type: string
+                  launchURL:
+                    type: string
+                  openInNewTab:
                     type: boolean
-                  propertyMappings:
-                    description: |-
-                      PropertyMappings is a list of Authentik scope mapping names to include in the provider.
-                      These control which claims (e.g., groups, email, profile) are included in tokens.
-                      The controller resolves names to UUIDs via the Authentik API.
-                    items:
-                      type: string
-                    type: array
-                  redirectURL:
-                    description: |-
-                      RedirectURL overrides the auto-derived redirect URL.
-                      If empty, it is derived from the first HTTPRoute's hostname.
+                  publisher:
                     type: string
-                  scopes:
-                    default:
-                    - openid
-                    - profile
-                    description: Scopes to request from the OIDC provider.
-                    items:
-                      type: string
-                    type: array
-                  signingKey:
-                    description: |-
-                      SigningKey is the name of the Authentik certificate keypair used to sign tokens.
-                      The controller resolves this to the keypair's UUID via the Authentik API.
-                    type: string
-                required:
-                - allowedGroups
-                - signingKey
                 type: object
-              providerRef:
-                description: ProviderRef references a cluster-scoped AuthentikProvider.
+              cookieConfig:
+                description: CookieConfig defines cookie settings for the Envoy OIDC
+                  session.
                 properties:
-                  name:
-                    description: Name of the AuthentikProvider resource.
+                  domain:
                     type: string
-                required:
-                - name
+                  namePrefix:
+                    type: string
+                  sameSite:
+                    default: Lax
+                    enum:
+                    - Lax
+                    - Strict
+                    - None
+                    type: string
                 type: object
-              targetRefs:
-                description: TargetRefs identifies the HTTPRoutes to protect (same
-                  namespace).
+              displayName:
+                description: DisplayName is the Authentik application name. Defaults
+                  to metadata.name.
+                type: string
+              forwardAccessToken:
+                default: true
+                type: boolean
+              groups:
                 items:
-                  description: TargetRef identifies an HTTPRoute by name (same namespace
-                    as OIDCPolicy).
+                  description: |-
+                    GroupRef is a group to bind to the application. create=false requires it to
+                    already exist; create=true creates it if missing. cleanup=true deletes it on
+                    OIDCApplication deletion, but only if the operator created it.
                   properties:
+                    cleanup:
+                      default: false
+                      type: boolean
+                    create:
+                      default: false
+                      type: boolean
                     name:
-                      description: Name of the HTTPRoute.
+                      minLength: 1
                       type: string
                   required:
                   - name
                   type: object
                 minItems: 1
                 type: array
+              includeClaimsInIDToken:
+                default: true
+                type: boolean
+              propertyMappings:
+                items:
+                  type: string
+                type: array
+              providerRef:
+                description: ProviderRef references a cluster-scoped AuthentikProvider.
+                properties:
+                  name:
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              redirectURIs:
+                items:
+                  type: string
+                type: array
+              refreshTokenValidity:
+                type: string
+              scopes:
+                default:
+                - openid
+                - profile
+                items:
+                  type: string
+                type: array
+              secretName:
+                description: |-
+                  SecretName overrides the application Secret name. It is used only when
+                  SecretTemplate contains entries and defaults to "<metadata.name>-oidc".
+                type: string
+              secretTemplate:
+                additionalProperties:
+                  type: string
+                description: |-
+                  SecretTemplate maps Secret data keys to Go templates rendered from the OIDC
+                  provider credentials and discovery document.
+                type: object
+                x-kubernetes-validations:
+                - message: keys must be valid Kubernetes Secret data keys
+                  rule: self.all(k, k.size() <= 253 && k.matches('^[-._a-zA-Z0-9]+$'))
+              signingKey:
+                minLength: 1
+                type: string
+              slug:
+                description: |-
+                  Slug is the stable identifier (Authentik slug, client_id, provider name).
+                  Defaults to "<namespace>-<name>". Immutable.
+                maxLength: 50
+                pattern: ^[-a-zA-Z0-9_]+$
+                type: string
+              subMode:
+                description: Provider tuning (optional passthrough).
+                type: string
+              targetRefs:
+                description: TargetRefs are Gateway API routes to protect. Empty ⇒
+                  standalone (no SecurityPolicy).
+                items:
+                  description: TargetRef identifies a Gateway API route to protect
+                    with a SecurityPolicy.
+                  properties:
+                    group:
+                      default: gateway.networking.k8s.io
+                      type: string
+                    kind:
+                      default: HTTPRoute
+                      type: string
+                    name:
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
             required:
-            - oidc
+            - groups
             - providerRef
-            - targetRefs
+            - signingKey
             type: object
           status:
-            description: OIDCPolicyStatus defines the observed state.
+            description: OIDCApplicationStatus defines the observed state.
             properties:
               authentik:
-                description: Authentik tracks created Authentik resources.
+                description: AuthentikStatus tracks created Authentik resources.
                 properties:
                   applicationID:
                     type: string
@@ -160,6 +214,12 @@ spec:
                     type: array
                   clientID:
                     type: string
+                  createdGroups:
+                    description: CreatedGroups are groups the operator created (candidates
+                      for cleanup).
+                    items:
+                      type: string
+                    type: array
                   policyBindingIDs:
                     items:
                       type: string
@@ -168,7 +228,6 @@ spec:
                     type: integer
                 type: object
               conditions:
-                description: Conditions represent the latest available observations.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -225,11 +284,8 @@ spec:
                   type: object
                 type: array
               secretName:
-                description: SecretName is the name of the Secret containing the OIDC
-                  client credentials.
                 type: string
               securityPolicies:
-                description: SecurityPolicies lists the created SecurityPolicy resources.
                 items:
                   description: SecurityPolicyRef tracks a created SecurityPolicy.
                   properties:

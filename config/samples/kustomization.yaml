@@ -1,5 +1,5 @@
 ## Append samples of your project ##
 resources:
 - v1alpha1_authentikprovider.yaml
-- v1alpha1_oidcpolicy.yaml
+- v1alpha1_oidcapplication.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

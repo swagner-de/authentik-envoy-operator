@@ -80,11 +80,27 @@ func (r *AuthentikProviderReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 	}
+	if authFlow == nil {
+		r.setCondition(&provider, metav1.ConditionFalse, "FlowNotFound", fmt.Sprintf("authorization flow %q not found", provider.Spec.AuthorizationFlowSlug))
+		appmetrics.ProviderConnected.WithLabelValues(provider.Name).Set(0)
+		if err := r.Status().Update(ctx, &provider); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+	}
 
 	invalFlow, err := apiClient.GetFlowBySlug(ctx, provider.Spec.InvalidationFlowSlug)
 	if err != nil {
 		log.Error(err, "failed to resolve invalidation flow")
 		r.setCondition(&provider, metav1.ConditionFalse, "FlowResolutionFailed", fmt.Sprintf("invalidation flow: %v", err))
+		appmetrics.ProviderConnected.WithLabelValues(provider.Name).Set(0)
+		if err := r.Status().Update(ctx, &provider); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+	}
+	if invalFlow == nil {
+		r.setCondition(&provider, metav1.ConditionFalse, "FlowNotFound", fmt.Sprintf("invalidation flow %q not found", provider.Spec.InvalidationFlowSlug))
 		appmetrics.ProviderConnected.WithLabelValues(provider.Name).Set(0)
 		if err := r.Status().Update(ctx, &provider); err != nil {
 			return ctrl.Result{}, err

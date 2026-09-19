@@ -85,7 +85,7 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
-		Development: true,
+		Development: false,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -190,17 +190,17 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "authentikprovider")
 		os.Exit(1)
 	}
-	if err := (&controller.OIDCPolicyReconciler{
+	if err := (&controller.OIDCApplicationReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "oidcpolicy")
+		setupLog.Error(err, "Failed to create controller", "controller", "oidcapplication")
 		os.Exit(1)
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := webhookv1alpha1.SetupOIDCPolicyWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "OIDCPolicy")
+		if err := webhookv1alpha1.SetupOIDCApplicationWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "OIDCApplication")
 			os.Exit(1)
 		}
 	}

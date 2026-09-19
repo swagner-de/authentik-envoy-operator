@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
@@ -61,5 +62,27 @@ func TestClientDoRequestAPIError(t *testing.T) {
 	}
 	if apiErr.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", apiErr.StatusCode)
+	}
+	if !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "bad request") {
+		t.Errorf("expected error to include status and detail, got %q", err.Error())
+	}
+}
+
+// TestClientDoRequestFieldValidationError ensures DRF-style field errors (which
+// populate neither detail nor errors) still surface via the raw body.
+func TestClientDoRequestFieldValidationError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"signing_key":["This field is required."]}`))
+	}))
+	defer server.Close()
+
+	client := authentik.NewClient(server.URL, "test-token")
+	err := client.Do(context.Background(), http.MethodPost, "/api/v3/test/", map[string]string{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "signing_key") {
+		t.Errorf("expected field-validation body to surface in error, got %q", err.Error())
 	}
 }
