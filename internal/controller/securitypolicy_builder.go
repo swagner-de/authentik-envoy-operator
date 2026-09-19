@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
+	v1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
 )
 
 // SecurityPolicyParams holds the dynamic values needed to build a SecurityPolicy.

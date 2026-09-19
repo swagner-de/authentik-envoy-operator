@@ -61,7 +61,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/authentik-envoy-operator/authentik-envoy-operator
+        - github.com/swagner-de/authentik-envoy-operator
   exclusions:
     generated: lax
     paths:

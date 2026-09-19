@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
+	"github.com/swagner-de/authentik-envoy-operator/internal/authentik"
 )
 
 func TestCreateProvider(t *testing.T) {

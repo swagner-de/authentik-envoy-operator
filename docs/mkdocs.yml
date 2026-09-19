@@ -1,6 +1,6 @@
 site_name: Authentik Envoy Operator
 site_description: Kubernetes operator for Authentik OIDC + Envoy Gateway SecurityPolicy automation
-repo_url: https://github.com/authentik-envoy-operator/authentik-envoy-operator
+repo_url: https://github.com/swagner-de/authentik-envoy-operator
 
 theme:
   name: material

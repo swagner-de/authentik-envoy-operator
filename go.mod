@@ -1,4 +1,4 @@
-module github.com/authentik-envoy-operator/authentik-envoy-operator
+module github.com/swagner-de/authentik-envoy-operator
 
 go 1.26.4
 

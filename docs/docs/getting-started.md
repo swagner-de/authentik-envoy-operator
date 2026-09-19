@@ -22,7 +22,7 @@ helm install authentik-envoy-operator ./dist/chart \
   --set metrics.secure=false
 ```
 
-The chart defaults `manager.image.repository` to `ghcr.io/authentik-envoy-operator/authentik-envoy-operator` and the tag to the chart's `appVersion`; override with `--set manager.image.repository=...` / `--set manager.image.tag=...` if you host the image elsewhere.
+The chart defaults `manager.image.repository` to `ghcr.io/swagner-de/authentik-envoy-operator` and the tag to the chart's `appVersion`; override with `--set manager.image.repository=...` / `--set manager.image.tag=...` if you host the image elsewhere.
 
 > **Note:** `metrics.secure` defaults to `true`, which serves metrics over HTTPS using a cert-manager-provisioned serving certificate. When you disable cert-manager (as above) you must also set `metrics.secure=false`, otherwise the metrics endpoint has no serving certificate. For production, keep cert-manager enabled and leave secure metrics on.
 

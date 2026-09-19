@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
+	"github.com/swagner-de/authentik-envoy-operator/internal/authentik"
 )
 
 func TestNewClient(t *testing.T) {

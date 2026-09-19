@@ -8,8 +8,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	apiv1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	webhookv1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/internal/webhook/v1alpha1"
+	apiv1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
+	webhookv1alpha1 "github.com/swagner-de/authentik-envoy-operator/internal/webhook/v1alpha1"
 )
 
 func base() *apiv1alpha1.OIDCApplication {

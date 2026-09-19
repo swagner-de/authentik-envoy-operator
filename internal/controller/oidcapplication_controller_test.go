@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
+	v1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
+	"github.com/swagner-de/authentik-envoy-operator/internal/authentik"
 )
 
 // fakeServerState tracks side-effecting calls so tests can assert on them.

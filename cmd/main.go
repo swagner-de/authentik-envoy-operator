@@ -38,9 +38,9 @@ import (
 	egv1alpha1 "github.com/envoyproxy/gateway/api/v1alpha1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	authentikenvoyoperatoriov1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/controller"
-	webhookv1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/internal/webhook/v1alpha1"
+	authentikenvoyoperatoriov1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
+	"github.com/swagner-de/authentik-envoy-operator/internal/controller"
+	webhookv1alpha1 "github.com/swagner-de/authentik-envoy-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

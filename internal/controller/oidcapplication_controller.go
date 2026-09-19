@@ -21,9 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
-	appmetrics "github.com/authentik-envoy-operator/authentik-envoy-operator/internal/metrics"
+	v1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
+	"github.com/swagner-de/authentik-envoy-operator/internal/authentik"
+	appmetrics "github.com/swagner-de/authentik-envoy-operator/internal/metrics"
 )
 
 const (

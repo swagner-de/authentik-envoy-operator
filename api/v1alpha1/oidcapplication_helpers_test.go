@@ -5,7 +5,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
+	v1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
 )
 
 func app(name, ns string, spec v1alpha1.OIDCApplicationSpec) *v1alpha1.OIDCApplication {

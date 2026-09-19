@@ -9,8 +9,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
+	v1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
+	"github.com/swagner-de/authentik-envoy-operator/internal/authentik"
 )
 
 func TestResolveGroupsCreatesMissing(t *testing.T) {

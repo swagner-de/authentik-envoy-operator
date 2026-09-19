@@ -11,14 +11,14 @@ plugins:
     manifests: dist/install.yaml
     output: dist
 projectName: authentik-envoy-operator
-repo: github.com/authentik-envoy-operator/authentik-envoy-operator
+repo: github.com/swagner-de/authentik-envoy-operator
 resources:
 - api:
     crdVersion: v1
   controller: true
   domain: authentik-envoy-operator.io
   kind: AuthentikProvider
-  path: github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1
+  path: github.com/swagner-de/authentik-envoy-operator/api/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1
@@ -26,7 +26,7 @@ resources:
   controller: true
   domain: authentik-envoy-operator.io
   kind: OIDCApplication
-  path: github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1
+  path: github.com/swagner-de/authentik-envoy-operator/api/v1alpha1
   version: v1alpha1
   webhooks:
     validation: true

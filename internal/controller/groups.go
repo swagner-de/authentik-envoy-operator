@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
-	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
+	v1alpha1 "github.com/swagner-de/authentik-envoy-operator/api/v1alpha1"
+	"github.com/swagner-de/authentik-envoy-operator/internal/authentik"
 )
 
 // resolveGroups resolves each spec group to its Authentik UUID, creating groups
