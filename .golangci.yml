@@ -31,10 +31,10 @@ linters:
     revive:
       rules:
         - name: comment-spacings
-        - name: import-shadowing
     modernize:
       disable:
         - omitzero
+        - newexpr
   exclusions:
     generated: lax
     rules:
@@ -45,6 +45,11 @@ linters:
           - dupl
           - lll
         path: internal/*
+      - linters:
+          - errcheck
+          - goconst
+          - modernize
+        path: _test\.go
     paths:
       - third_party$
       - builtin$

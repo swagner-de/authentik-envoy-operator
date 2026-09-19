@@ -1,18 +1,35 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "semanticCommits": "enabled",
+  "semanticCommitScope": "deps",
   "gomod": {
     "enabled": true
   },
   "packageRules": [
     {
+      "description": "Automerge patch updates",
       "matchUpdateTypes": ["patch"],
       "automerge": true
     },
     {
+      "description": "Group and automerge GitHub Actions minor/patch",
       "matchManagers": ["github-actions"],
-      "automerge": true,
-      "matchUpdateTypes": ["minor", "patch"]
+      "groupName": "github-actions",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Group Kubernetes / controller-runtime Go modules together",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["k8s.io/**", "sigs.k8s.io/**"],
+      "groupName": "kubernetes"
+    },
+    {
+      "description": "Group remaining Go module minor/patch updates",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "go modules"
     }
   ]
 }
