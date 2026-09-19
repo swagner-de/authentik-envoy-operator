@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- Kubernetes cluster with [Envoy Gateway](https://gateway.envoyproxy.io/) installed
+- Kubernetes 1.28+
+- [Envoy Gateway](https://gateway.envoyproxy.io/) 1.0+ `SecurityPolicy` CRDs and Gateway API `HTTPRoute` CRDs. The manager currently registers watches for both APIs at startup, even for standalone applications; Envoy functionality is used only with `targetRefs`.
 - [Authentik](https://goauthentik.io/) instance with API access
 - Helm 3.x
 
@@ -10,14 +11,17 @@
 
 ### Via Helm
 
+The chart is Kubebuilder-generated and lives at `dist/chart` (published as an OCI artifact on release).
+
 ```bash
-helm install authentik-envoy-operator ./charts/authentik-envoy-operator \
+helm install authentik-envoy-operator ./dist/chart \
   --namespace authentik-envoy-operator \
   --create-namespace \
-  --set image.repository=registry.mannheim.sebwagner.de/authentik-envoy-operator \
-  --set image.tag=latest \
-  --set webhook.enabled=false
+  --set webhook.enabled=false \
+  --set certManager.enabled=false
 ```
+
+The chart defaults `manager.image.repository` to `ghcr.io/authentik-envoy-operator/authentik-envoy-operator` and the tag to the chart's `appVersion`; override with `--set manager.image.repository=...` / `--set manager.image.tag=...` if you host the image elsewhere.
 
 ### Authentik API Token
 
@@ -26,7 +30,7 @@ Create an API token in Authentik with the following permissions:
 - Read/Write access to **Providers** (OAuth2)
 - Read/Write access to **Applications**
 - Read/Write access to **Policy Bindings**
-- Read access to **Groups**
+- Read access to **Groups**, plus add/delete access when using `groups[].create: true` or `groups[].cleanup: true`
 - Read access to **Flows**
 - Read access to **Certificate Key Pairs**
 - Read access to **Property Mappings**
@@ -58,31 +62,72 @@ spec:
   invalidationFlowSlug: "default-provider-invalidation-flow"
 ```
 
-### 2. Create an OIDCPolicy
+### 2. Create an OIDCApplication
+
+With `targetRefs` (Envoy-fronted):
 
 ```yaml
 apiVersion: authentik-envoy-operator.io/v1alpha1
-kind: OIDCPolicy
+kind: OIDCApplication
 metadata:
   name: my-app
   namespace: default
 spec:
   providerRef:
     name: main
+  displayName: "My App"
+  signingKey: "authentik Self-signed Certificate"
+  scopes:
+    - openid
+    - profile
+    - email
+  propertyMappings:
+    - "authentik default OAuth Mapping: OpenID 'openid'"
+    - "authentik default OAuth Mapping: OpenID 'profile'"
+    - "authentik default OAuth Mapping: OpenID 'email'"
+  groups:
+    - name: admins
+      create: false
   targetRefs:
     - name: my-app-route
-  oidc:
-    allowedGroups:
-      - admins
-    scopes:
-      - openid
-      - profile
-      - email
-    signingKey: "authentik Self-signed Certificate"
-    propertyMappings:
-      - "authentik default OAuth Mapping: OpenID 'openid'"
-      - "authentik default OAuth Mapping: OpenID 'profile'"
-      - "authentik default OAuth Mapping: OpenID 'email'"
+```
+
+Use an asymmetric RSA or EC `signingKey` so tokens can be verified through JWKS.
+
+Omit `targetRefs` for **standalone** mode (no Envoy resources). Native apps need explicit `redirectURIs` for functional login because there are no route-derived callbacks; the controller does not reject an omitted list. To also create an application Secret, add a nonempty template; its name defaults to `<name>-oidc`:
+
+```yaml
+spec:
+  # ...
+  redirectURIs:
+    - "https://paperless.example.com/accounts/oidc/authentik/login/callback/"
+  secretTemplate:
+    # quote emits a JSON string, including its surrounding quotes.
+    PAPERLESS_SOCIALACCOUNT_PROVIDERS: >-
+      [{"provider":"openid_connect","name":"Authentik","settings":{"server_url":{{ .DiscoveryURL | quote }},"client_id":{{ .ClientID | quote }},"secret":{{ .ClientSecret | quote }}}}]
+```
+
+The Secret contains exactly the keys in `secretTemplate`; the operator does not add or merge a fixed credential schema.
+
+### Migrate the former fixed-schema Secret
+
+The application Secret is no longer created implicitly. To preserve the exact
+former nine-key schema during an upgrade, add this template. Omit `secretName`
+to retain the default `<name>-oidc` name, or set it to the existing Secret name:
+
+```yaml
+spec:
+  # ...
+  secretTemplate:
+    client-id: "{{ .ClientID }}"
+    client-secret: "{{ .ClientSecret }}"
+    issuer: "{{ .Issuer }}"
+    discovery-url: "{{ .DiscoveryURL }}"
+    authorization-endpoint: "{{ .AuthorizationEndpoint }}"
+    token-endpoint: "{{ .TokenEndpoint }}"
+    userinfo-endpoint: "{{ .UserinfoEndpoint }}"
+    jwks-uri: "{{ .JWKSURI }}"
+    end-session-endpoint: "{{ .EndSessionEndpoint }}"
 ```
 
 ### 3. Verify
@@ -91,8 +136,8 @@ spec:
 # Check AuthentikProvider connectivity
 kubectl get authentikproviders
 
-# Check OIDCPolicy status
-kubectl get oidcpolicies -A
+# Check OIDCApplication status
+kubectl get oidcapplications -A
 
 # Check created SecurityPolicies
 kubectl get securitypolicies -A
@@ -102,10 +147,10 @@ kubectl get securitypolicies -A
 
 The operator will:
 
-1. Resolve the signing key and property mappings in Authentik
-2. Create an OAuth2 Provider named `<namespace>-<name>`
-3. Create an Application with the same slug
-4. Bind the allowed groups to the application
-5. Extract hostnames from the referenced HTTPRoute(s) to build redirect URIs
-6. Sync the generated client secret to `<name>-client-secret` in the same namespace
-7. Create a `SecurityPolicy` per target HTTPRoute configuring Envoy Gateway OIDC filter
+1. Resolve the signing key and property mappings, and reference/create the listed groups in Authentik
+2. Create (or adopt) an OAuth2 Provider named `<namespace>-<name>` (override via `spec.slug`)
+3. Create an Application with the same slug (display name from `spec.displayName`)
+4. Bind the listed groups to the application
+5. Build redirect URIs from `spec.redirectURIs` plus each referenced HTTPRoute's hostnames
+6. If `secretTemplate` is nonempty, render its entries into the application Secret in the same namespace
+7. If `targetRefs` are set, write `<name>-envoy-oidc` with exactly the `client-secret` key and create a `SecurityPolicy` per target HTTPRoute that references it
