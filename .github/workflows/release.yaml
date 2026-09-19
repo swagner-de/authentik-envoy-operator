@@ -63,7 +63,8 @@ jobs:
 
       - name: Package and push Helm chart
         run: |
-          helm package charts/authentik-envoy-operator/ --version ${{ github.ref_name }} --app-version ${{ github.ref_name }}
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm package dist/chart/ --version "$VERSION" --app-version "$VERSION"
           helm push authentik-envoy-operator-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
 
       - name: Create GitHub Release

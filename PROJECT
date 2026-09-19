@@ -6,6 +6,10 @@ cliVersion: 4.14.0
 domain: authentik-envoy-operator.io
 layout:
 - go.kubebuilder.io/v4
+plugins:
+  helm.kubebuilder.io/v2-alpha:
+    manifests: dist/install.yaml
+    output: dist
 projectName: authentik-envoy-operator
 repo: github.com/authentik-envoy-operator/authentik-envoy-operator
 resources:
@@ -21,7 +25,7 @@ resources:
     namespaced: true
   controller: true
   domain: authentik-envoy-operator.io
-  kind: OIDCPolicy
+  kind: OIDCApplication
   path: github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1
   version: v1alpha1
   webhooks:

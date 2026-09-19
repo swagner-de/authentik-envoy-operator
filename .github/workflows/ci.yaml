@@ -44,5 +44,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
-      - run: helm lint charts/authentik-envoy-operator/
-      - run: helm template test charts/authentik-envoy-operator/
+      - run: helm lint dist/chart/
+      - run: helm template test dist/chart/
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Regenerate manifests and code
+        run: make manifests generate
+      - name: Fail if generated artifacts are out of date
+        run: git diff --exit-code || (echo "::error::Run 'make manifests generate' and commit the result" && exit 1)
