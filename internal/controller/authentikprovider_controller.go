@@ -12,7 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/authentik-envoy-operator/authentik-envoy-operator/api/v1alpha1"
 	"github.com/authentik-envoy-operator/authentik-envoy-operator/internal/authentik"
@@ -135,5 +137,33 @@ func (r *AuthentikProviderReconciler) setCondition(provider *v1alpha1.AuthentikP
 func (r *AuthentikProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.AuthentikProvider{}).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.mapSecretToProviders)).
 		Complete(r)
+}
+
+// mapSecretToProviders enqueues every AuthentikProvider whose apiTokenSecretRef
+// points at the changed Secret, so a rotated API token is picked up promptly
+// instead of waiting for the periodic resync.
+func (r *AuthentikProviderReconciler) mapSecretToProviders(ctx context.Context, obj client.Object) []reconcile.Request {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok {
+		return nil
+	}
+
+	var providers v1alpha1.AuthentikProviderList
+	if err := r.List(ctx, &providers); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list AuthentikProviders for Secret mapping")
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range providers.Items {
+		ref := providers.Items[i].Spec.APITokenSecretRef
+		if ref.Name == secret.Name && ref.Namespace == secret.Namespace {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: providers.Items[i].Name},
+			})
+		}
+	}
+	return requests
 }

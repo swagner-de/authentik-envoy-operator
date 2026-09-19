@@ -118,8 +118,10 @@ type Group struct {
 // PaginatedResponse wraps paginated API responses.
 type PaginatedResponse[T any] struct {
 	Pagination struct {
-		Count   int `json:"count"`
-		Current int `json:"current"`
+		Count      int `json:"count"`
+		Current    int `json:"current"`
+		TotalPages int `json:"total_pages"`
+		Next       int `json:"next"`
 	} `json:"pagination"`
 	Results []T `json:"results"`
 }

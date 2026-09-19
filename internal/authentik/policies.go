@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 func (c *Client) CreatePolicyBinding(ctx context.Context, req PolicyBindingRequest) (*PolicyBinding, error) {
@@ -15,7 +16,7 @@ func (c *Client) CreatePolicyBinding(ctx context.Context, req PolicyBindingReque
 }
 
 func (c *Client) DeletePolicyBinding(ctx context.Context, id string) error {
-	path := fmt.Sprintf("/api/v3/policies/bindings/%s/", id)
+	path := fmt.Sprintf("/api/v3/policies/bindings/%s/", url.PathEscape(id))
 	if err := c.Do(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return fmt.Errorf("deleting policy binding %q: %w", id, err)
 	}
@@ -23,10 +24,17 @@ func (c *Client) DeletePolicyBinding(ctx context.Context, id string) error {
 }
 
 func (c *Client) ListPolicyBindings(ctx context.Context, targetID string) ([]PolicyBinding, error) {
-	path := fmt.Sprintf("/api/v3/policies/bindings/?target=%s", targetID)
-	var resp PaginatedResponse[PolicyBinding]
-	if err := c.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
-		return nil, fmt.Errorf("listing policy bindings for target %q: %w", targetID, err)
+	var all []PolicyBinding
+	for page := 1; ; page++ {
+		path := fmt.Sprintf("/api/v3/policies/bindings/?target=%s&page=%d", url.QueryEscape(targetID), page)
+		var resp PaginatedResponse[PolicyBinding]
+		if err := c.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+			return nil, fmt.Errorf("listing policy bindings for target %q: %w", targetID, err)
+		}
+		all = append(all, resp.Results...)
+		if resp.Pagination.Next == 0 {
+			break
+		}
 	}
-	return resp.Results, nil
+	return all, nil
 }

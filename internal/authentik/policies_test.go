@@ -105,3 +105,38 @@ func TestListPolicyBindings(t *testing.T) {
 		t.Errorf("expected b2, got %s", bindings[1].PK)
 	}
 }
+
+func TestListPolicyBindingsPaginates(t *testing.T) {
+	var seenPages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		seenPages = append(seenPages, page)
+		w.WriteHeader(http.StatusOK)
+		switch page {
+		case "1":
+			// next=2 signals another page follows.
+			w.Write([]byte(`{"pagination":{"count":2,"current":1,"total_pages":2,"next":2},"results":[{"pk":"b1"}]}`))
+		case "2":
+			// next=0 signals the last page.
+			w.Write([]byte(`{"pagination":{"count":2,"current":2,"total_pages":2,"next":0},"results":[{"pk":"b2"}]}`))
+		default:
+			t.Errorf("unexpected page requested: %q", page)
+		}
+	}))
+	defer server.Close()
+
+	client := authentik.NewClient(server.URL, "token")
+	bindings, err := client.ListPolicyBindings(context.Background(), "app-uuid")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("expected 2 bindings across pages, got %d", len(bindings))
+	}
+	if bindings[0].PK != "b1" || bindings[1].PK != "b2" {
+		t.Errorf("unexpected bindings: %+v", bindings)
+	}
+	if len(seenPages) != 2 || seenPages[0] != "1" || seenPages[1] != "2" {
+		t.Errorf("expected pages [1 2] to be fetched, got %v", seenPages)
+	}
+}

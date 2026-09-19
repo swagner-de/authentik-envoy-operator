@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,10 +18,12 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient creates a new Authentik API client.
+// NewClient creates a new Authentik API client. A trailing slash on baseURL is
+// trimmed so it can be concatenated with leading-slash paths without producing
+// a double slash.
 func NewClient(baseURL, token string) *Client {
 	return &Client{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,

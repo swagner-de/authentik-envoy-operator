@@ -20,6 +20,10 @@ go.work
 # Kubernetes Generated files - skip generated files, except for vendored files
 !vendor/**/zz_generated.*
 
+# Generated installer bundle (produced on demand via `make build-installer`);
+# distribution is via the Helm/OCI chart, not this file.
+dist/install.yaml
+
 # editor and IDE paraphernalia
 .idea
 .vscode

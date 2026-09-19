@@ -27,7 +27,7 @@ func (c *Client) GetGroupByName(ctx context.Context, name string) (*Group, error
 
 // DeleteGroup deletes a group by its primary key.
 func (c *Client) DeleteGroup(ctx context.Context, pk string) error {
-	path := fmt.Sprintf("/api/v3/core/groups/%s/", pk)
+	path := fmt.Sprintf("/api/v3/core/groups/%s/", url.PathEscape(pk))
 	if err := c.Do(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return fmt.Errorf("deleting group %q: %w", pk, err)
 	}
