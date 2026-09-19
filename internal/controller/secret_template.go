@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"text/template"
 	"text/template/parse"
 )
+
+// clientSecretField is the name of the secretTemplateData field that carries
+// the OAuth2 client secret, matched against template AST nodes.
+const clientSecretField = "ClientSecret"
 
 type secretTemplateData struct {
 	ClientID              string
@@ -127,7 +132,7 @@ func (a *secretDependencyAnalyzer) analyzeTemplate(tmpl *template.Template, dotM
 		dotMayContainRoot: dotMayContainRoot,
 		variables:         map[string]bool{"$": dotMayContainRoot},
 	}
-	return a.nodeUsesClientSecret(tmpl.Tree.Root, &scope)
+	return a.nodeUsesClientSecret(tmpl.Root, &scope)
 }
 
 func (a *secretDependencyAnalyzer) nodeUsesClientSecret(node parse.Node, scope *dependencyScope) bool {
@@ -152,14 +157,14 @@ func (a *secretDependencyAnalyzer) nodeUsesClientSecret(node parse.Node, scope *
 		_, depends := a.analyzePipe(node, scope)
 		return depends
 	case *parse.FieldNode:
-		return scope.dotMayContainRoot && len(node.Ident) > 0 && node.Ident[0] == "ClientSecret"
+		return scope.dotMayContainRoot && len(node.Ident) > 0 && node.Ident[0] == clientSecretField
 	case *parse.DotNode:
 		return scope.dotMayContainRoot
 	case *parse.VariableNode:
 		return a.variableUsesClientSecret(node, scope)
 	case *parse.ChainNode:
 		baseMayContainRoot := a.nodeMayContainRoot(node.Node, scope)
-		if baseMayContainRoot && len(node.Field) > 0 && node.Field[0] == "ClientSecret" {
+		if baseMayContainRoot && len(node.Field) > 0 && node.Field[0] == clientSecretField {
 			return true
 		}
 		return false
@@ -294,7 +299,7 @@ func (a *secretDependencyAnalyzer) variableUsesClientSecret(node *parse.Variable
 	if len(node.Ident) == 0 || !scope.variables[node.Ident[0]] {
 		return false
 	}
-	return len(node.Ident) == 1 || node.Ident[1] == "ClientSecret"
+	return len(node.Ident) == 1 || node.Ident[1] == clientSecretField
 }
 
 func (scope *dependencyScope) clone() *dependencyScope {
@@ -302,8 +307,6 @@ func (scope *dependencyScope) clone() *dependencyScope {
 		dotMayContainRoot: scope.dotMayContainRoot,
 		variables:         make(map[string]bool, len(scope.variables)),
 	}
-	for name, mayContainRoot := range scope.variables {
-		cloned.variables[name] = mayContainRoot
-	}
+	maps.Copy(cloned.variables, scope.variables)
 	return cloned
 }

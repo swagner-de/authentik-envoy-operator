@@ -534,7 +534,7 @@ func TestReconcileStandalonePreservesDependentTemplateDataWithoutEnvoyRecovery(t
 	applicationSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: app.EffectiveSecretName(), Namespace: app.Namespace},
 		Data: map[string][]byte{
-			"credentials": []byte{0xff, 0x00, 0x7f},
+			"credentials": {0xff, 0x00, 0x7f},
 			"issuer":      []byte("old-issuer"),
 		},
 	}
@@ -594,7 +594,7 @@ func TestReconcileInvalidTemplatePreservesSecretAndRedactsCondition(t *testing.T
 	}
 	previousData := map[string][]byte{
 		"BROKEN_KEY": []byte("previous-data-must-not-leak"),
-		"binary":     []byte{0xff, 0x00, 0x7f},
+		"binary":     {0xff, 0x00, 0x7f},
 	}
 	applicationSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: app.EffectiveSecretName(), Namespace: app.Namespace},
@@ -870,7 +870,7 @@ func TestReconcileSecretsRenamePreservesMatchingDependentApplicationKey(t *testi
 	}
 	previousApplication := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: app.Status.SecretName, Namespace: app.Namespace},
-		Data:       map[string][]byte{"password": []byte{0xff, 0x00, 0x7f}},
+		Data:       map[string][]byte{"password": {0xff, 0x00, 0x7f}},
 	}
 	envoySecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: app.EnvoySecretName(), Namespace: app.Namespace},
@@ -969,7 +969,7 @@ func TestReconcileSecretsMissingNewDependentApplicationKeyIsAtomic(t *testing.T)
 	}
 	applicationSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: app.EffectiveSecretName(), Namespace: app.Namespace},
-		Data:       map[string][]byte{"existing": []byte{0xff, 0x00, 0x7f}},
+		Data:       map[string][]byte{"existing": {0xff, 0x00, 0x7f}},
 	}
 	envoySecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: app.EnvoySecretName(), Namespace: app.Namespace},

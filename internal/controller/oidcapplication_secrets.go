@@ -52,43 +52,25 @@ func (r *OIDCApplicationReconciler) reconcileSecrets(
 		}
 	}
 
-	var previousApplication *corev1.Secret
-	if app.Status.SecretName != "" && (desiredApplication == nil || app.Status.SecretName != applicationSecretName) {
-		previousApplication, err = r.getSecret(ctx, app.Namespace, app.Status.SecretName)
-		if err != nil {
-			return "", "", err
-		}
-	} else {
-		previousApplication = desiredApplication
-	}
-	if previousApplication != nil && !metav1.IsControlledBy(previousApplication, app) {
-		previousApplication = nil
+	previousApplication, err := r.resolvePreviousApplicationSecret(ctx, app, desiredApplication, applicationSecretName)
+	if err != nil {
+		return "", "", err
 	}
 
 	var applicationData map[string][]byte
 	if applicationSecretName != "" {
-		var previousData map[string][]byte
-		if desiredApplication != nil && metav1.IsControlledBy(desiredApplication, app) {
-			previousData = desiredApplication.Data
-		} else if previousApplication != nil {
-			previousData = previousApplication.Data
-		}
-		applicationData, err = renderSecretTemplate(app.Spec.SecretTemplate, templateData, previousData)
+		applicationData, err = r.renderApplicationData(app, templateData, desiredApplication, previousApplication, applicationSecretName)
 		if err != nil {
-			return "", "", fmt.Errorf("rendering application Secret %q: %w", applicationSecretName, err)
+			return "", "", err
 		}
 	}
 
 	var envoyData map[string][]byte
 	if envoySecretName != "" {
-		envoyClientSecret := templateData.ClientSecret
-		if envoyClientSecret == "" && existingEnvoy != nil && metav1.IsControlledBy(existingEnvoy, app) {
-			envoyClientSecret = string(existingEnvoy.Data["client-secret"])
+		envoyData, err = r.buildEnvoyData(app, templateData, existingEnvoy, envoySecretName)
+		if err != nil {
+			return "", "", err
 		}
-		if envoyClientSecret == "" {
-			return "", "", fmt.Errorf("rendering Envoy Secret %q key %q: client secret is unavailable and no previous value exists", envoySecretName, "client-secret")
-		}
-		envoyData = map[string][]byte{"client-secret": []byte(envoyClientSecret)}
 	}
 
 	if err := r.validateSecretOwnership(app, desiredApplication, applicationSecretName); err != nil {
@@ -116,6 +98,75 @@ func (r *OIDCApplicationReconciler) reconcileSecrets(
 	return applicationSecretName, envoySecretName, nil
 }
 
+// resolvePreviousApplicationSecret returns the application Secret currently
+// owned by app whose data may be reused as the fallback when re-rendering
+// (e.g. when the client secret is unavailable). It prefers a status-tracked
+// Secret whose name has since changed, otherwise falls back to the desired
+// Secret. A Secret not controlled by app is never returned.
+func (r *OIDCApplicationReconciler) resolvePreviousApplicationSecret(
+	ctx context.Context,
+	app *v1alpha1.OIDCApplication,
+	desiredApplication *corev1.Secret,
+	applicationSecretName string,
+) (*corev1.Secret, error) {
+	var previous *corev1.Secret
+	if app.Status.SecretName != "" && (desiredApplication == nil || app.Status.SecretName != applicationSecretName) {
+		var err error
+		previous, err = r.getSecret(ctx, app.Namespace, app.Status.SecretName)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		previous = desiredApplication
+	}
+	if previous != nil && !metav1.IsControlledBy(previous, app) {
+		return nil, nil
+	}
+	return previous, nil
+}
+
+// renderApplicationData renders the application Secret template, using the
+// previous owned Secret's data as the fallback for keys that depend on an
+// unavailable client secret.
+func (r *OIDCApplicationReconciler) renderApplicationData(
+	app *v1alpha1.OIDCApplication,
+	templateData secretTemplateData,
+	desiredApplication *corev1.Secret,
+	previousApplication *corev1.Secret,
+	applicationSecretName string,
+) (map[string][]byte, error) {
+	var previousData map[string][]byte
+	switch {
+	case desiredApplication != nil && metav1.IsControlledBy(desiredApplication, app):
+		previousData = desiredApplication.Data
+	case previousApplication != nil:
+		previousData = previousApplication.Data
+	}
+	data, err := renderSecretTemplate(app.Spec.SecretTemplate, templateData, previousData)
+	if err != nil {
+		return nil, fmt.Errorf("rendering application Secret %q: %w", applicationSecretName, err)
+	}
+	return data, nil
+}
+
+// buildEnvoyData assembles the fixed Envoy Secret payload, reusing the existing
+// owned client-secret when the freshly resolved one is unavailable.
+func (r *OIDCApplicationReconciler) buildEnvoyData(
+	app *v1alpha1.OIDCApplication,
+	templateData secretTemplateData,
+	existingEnvoy *corev1.Secret,
+	envoySecretName string,
+) (map[string][]byte, error) {
+	clientSecret := templateData.ClientSecret
+	if clientSecret == "" && existingEnvoy != nil && metav1.IsControlledBy(existingEnvoy, app) {
+		clientSecret = string(existingEnvoy.Data["client-secret"])
+	}
+	if clientSecret == "" {
+		return nil, fmt.Errorf("rendering Envoy Secret %q key %q: client secret is unavailable and no previous value exists", envoySecretName, "client-secret")
+	}
+	return map[string][]byte{"client-secret": []byte(clientSecret)}, nil
+}
+
 func (r *OIDCApplicationReconciler) getSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
 	if name == "" {
 		return nil, nil
@@ -136,7 +187,7 @@ func (r *OIDCApplicationReconciler) validateSecretOwnership(app *v1alpha1.OIDCAp
 	}
 	copy := secret.DeepCopy()
 	if err := controllerutil.SetControllerReference(app, copy, r.Scheme); err != nil {
-		return fmt.Errorf("Secret %q cannot be controlled by OIDCApplication %q: %w", name, app.Name, err)
+		return fmt.Errorf("secret %q cannot be controlled by OIDCApplication %q: %w", name, app.Name, err)
 	}
 	return nil
 }
