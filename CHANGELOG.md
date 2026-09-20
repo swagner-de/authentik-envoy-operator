@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.0...v0.2.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* remove zero-width spaces breaking release workflow expressions ([e316798](https://github.com/swagner-de/authentik-envoy-operator/commit/e316798dc467422703845fd3ec6fa28c9e6fbc48))
+
 ## [0.2.0](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.1.0...v0.2.0) (2026-09-20)
 
 
