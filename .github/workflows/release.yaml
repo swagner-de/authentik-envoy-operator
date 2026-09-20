@@ -33,6 +33,13 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      - name: Enable auto-merge on the Release PR
+        if: steps.rp.outputs.prs_created == 'true' || steps.rp.outputs.pr != ''
+        env:
+          GH_TOKEN: ${​{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${​{ fromJSON(steps.rp.outputs.pr).number }}
+        run: gh pr merge "$PR_NUMBER" --squash --auto
+
   # Build and publish the image + chart. Runs either when release-please just
   # cut a release (same run, no token chaining needed) or on a manual v* tag.
   publish:
