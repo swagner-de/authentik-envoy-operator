@@ -2,32 +2,69 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
   contents: write
   packages: write
+  pull-requests: write
   id-token: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${​{ github.repository }}
 
 jobs:
-  release:
+  # On pushes to main, maintain a Release PR from Conventional Commits and,
+  # when that PR is merged, create the vX.Y.Z tag + GitHub Release. Skipped on
+  # tag pushes (manual releases).
+  release-please:
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') == false
+    outputs:
+      release_created: ${​{ steps.rp.outputs.release_created }}
+      tag_name: ${​{ steps.rp.outputs.tag_name }}
+      version: ${​{ steps.rp.outputs.version }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Build and publish the image + chart. Runs either when release-please just
+  # cut a release (same run, no token chaining needed) or on a manual v* tag.
+  publish:
+    runs-on: ubuntu-latest
+    needs: [release-please]
+    if: |
+      always() &&
+      (needs.release-please.outputs.release_created == 'true' ||
+       startsWith(github.ref, 'refs/tags/v'))
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${​{ needs.release-please.outputs.version }}"
+          fi
+          if [ -z "${VERSION}" ]; then
+            echo "::error::Could not resolve a release version"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: ${VERSION}"
 
       - uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${​{ env.REGISTRY }}
+          username: ${​{ github.actor }}
+          password: ${​{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -35,10 +72,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${​{ env.REGISTRY }}/${​{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={​{version}},value=v${​{ steps.version.outputs.version }}
+            type=semver,pattern={​{major}}.{​{minor}},value=v${​{ steps.version.outputs.version }}
 
       - name: Build and push
         id: build
@@ -47,27 +84,22 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${​{ steps.meta.outputs.tags }}
+          labels: ${​{ steps.meta.outputs.labels }}
 
       - uses: sigstore/cosign-installer@v3
 
       - name: Sign image
-        run: cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes ${​{ env.REGISTRY }}/${​{ env.IMAGE_NAME }}@${​{ steps.build.outputs.digest }}
 
       - uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          image: ${​{ env.REGISTRY }}/${​{ env.IMAGE_NAME }}:${​{ steps.version.outputs.version }}
 
       - uses: azure/setup-helm@v4
 
       - name: Package and push Helm chart
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ steps.version.outputs.version }}"
           helm package dist/chart/ --version "$VERSION" --app-version "$VERSION"
-          helm push authentik-envoy-operator-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
+          helm push authentik-envoy-operator-*.tgz oci://${​{ env.REGISTRY }}/${​{ github.repository_owner }}/charts
