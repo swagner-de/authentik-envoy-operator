@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.2](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.1...v0.2.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* adapt to dependency API changes ([d0701db](https://github.com/swagner-de/authentik-envoy-operator/commit/d0701db4e524ddf4b1814997a0dcd6e2e939f903))
+* **deps:** update go modules ([45f6fc2](https://github.com/swagner-de/authentik-envoy-operator/commit/45f6fc2b1186ecb8bba33658f1574503be30f641))
+* specify repository for release auto-merge ([f3ac10a](https://github.com/swagner-de/authentik-envoy-operator/commit/f3ac10a4054cf46ab57e809d98d1c90aa7266ab7))
+
+
+### Dependencies
+
+* **deps:** update actions/checkout action to v7 ([20b77b6](https://github.com/swagner-de/authentik-envoy-operator/commit/20b77b6d47c68838577d16edc51e7f896456643a))
+* **deps:** update actions/deploy-pages action to v5 ([e523716](https://github.com/swagner-de/authentik-envoy-operator/commit/e523716a5677c6c7d12a199b42f52e2eb0b444db))
+* **deps:** update actions/setup-go action to v7 ([bce721f](https://github.com/swagner-de/authentik-envoy-operator/commit/bce721ffa9183975878399ac42b49c94947d4b78))
+* **deps:** update github-actions ([#3](https://github.com/swagner-de/authentik-envoy-operator/issues/3)) ([0272859](https://github.com/swagner-de/authentik-envoy-operator/commit/0272859882881a5792a802735f7517fa96e070c3))
+* **deps:** update golang docker tag to v1.27 ([63a4b49](https://github.com/swagner-de/authentik-envoy-operator/commit/63a4b493ff68ef5ee4d444ad1a14f90d92a08516))
+
 ## [0.2.1](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.0...v0.2.1) (2026-09-20)
 
 
