@@ -205,7 +205,3 @@ func (a *OIDCApplication) ForwardAccessTokenEnabled() bool {
 	}
 	return true
 }
-
-func init() {
-	SchemeBuilder.Register(&OIDCApplication{}, &OIDCApplicationList{})
-}

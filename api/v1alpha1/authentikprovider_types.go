@@ -70,7 +70,3 @@ type AuthentikProviderList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AuthentikProvider `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&AuthentikProvider{}, &AuthentikProviderList{})
-}

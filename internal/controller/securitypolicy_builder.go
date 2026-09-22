@@ -117,7 +117,7 @@ func BuildSecurityPolicy(app *v1alpha1.OIDCApplication, target v1alpha1.TargetRe
 					{
 						Name:   &allowRuleName,
 						Action: allowAction,
-						Principal: egv1alpha1.Principal{
+						Principal: &egv1alpha1.Principal{
 							JWT: &egv1alpha1.JWTPrincipal{
 								Provider: "authentik",
 								Claims: []egv1alpha1.JWTClaim{
