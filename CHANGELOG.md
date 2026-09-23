@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.2...v0.2.3) (2026-09-23)
+
+
+### Dependencies
+
+* **deps:** update actions/setup-python action to v7 ([8d89d58](https://github.com/swagner-de/authentik-envoy-operator/commit/8d89d588d60382dd109c72ea7ecfaacbe6c89814))
+* **deps:** update actions/upload-pages-artifact action to v5 ([bcac1e5](https://github.com/swagner-de/authentik-envoy-operator/commit/bcac1e5bf649bf74ab3e86a20f9b0be590eb4dfc))
+
 ## [0.2.2](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.1...v0.2.2) (2026-09-22)
 
 
