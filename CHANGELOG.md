@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.3...v0.2.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **deps:** update go modules to v0.37.1 ([#25](https://github.com/swagner-de/authentik-envoy-operator/issues/25)) ([8568126](https://github.com/swagner-de/authentik-envoy-operator/commit/8568126a4588d562dcb1241cf78b74c3f7f73a0c))
+
 ## [0.2.3](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.2...v0.2.3) (2026-09-23)
 
 
