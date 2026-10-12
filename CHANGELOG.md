@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.6](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.5...v0.2.6) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** enable platformAutomerge and squash strategy in Renovate config ([#29](https://github.com/swagner-de/authentik-envoy-operator/issues/29)) ([0833725](https://github.com/swagner-de/authentik-envoy-operator/commit/083372501e692b246266fa4ac89f8e467bd1f0b5))
+
+
+### Dependencies
+
+* **deps:** update azure/setup-helm action to v5 ([#16](https://github.com/swagner-de/authentik-envoy-operator/issues/16)) ([e8fb1dd](https://github.com/swagner-de/authentik-envoy-operator/commit/e8fb1dd80b49517edeb6479921fb3ee91f063585))
+* **deps:** update docker/build-push-action action to v7 ([#18](https://github.com/swagner-de/authentik-envoy-operator/issues/18)) ([fdfd775](https://github.com/swagner-de/authentik-envoy-operator/commit/fdfd775116f50b13ddadabf004be27b1d74e5d95))
+* **deps:** update docker/metadata-action action to v6 ([#20](https://github.com/swagner-de/authentik-envoy-operator/issues/20)) ([7375db1](https://github.com/swagner-de/authentik-envoy-operator/commit/7375db1096a77868de3316b4eef7bf9f9080a414))
+* **deps:** update ghcr.io/devcontainers/features/docker-in-docker docker tag to v4 ([#22](https://github.com/swagner-de/authentik-envoy-operator/issues/22)) ([8d47dce](https://github.com/swagner-de/authentik-envoy-operator/commit/8d47dcecff5703f2f54e97626aecafd0946a9d80))
+
 ## [0.2.5](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.4...v0.2.5) (2026-10-12)
 
 
