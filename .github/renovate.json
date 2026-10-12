@@ -4,6 +4,8 @@
   "semanticCommits": "enabled",
   "semanticCommitType": "fix",
   "semanticCommitScope": "deps",
+  "automergeStrategy": "squash",
+  "platformAutomerge": true,
   "gomod": {
     "enabled": true
   },
