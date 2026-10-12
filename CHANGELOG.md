@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.6...v0.2.7) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ci:** parse release-please PR number in shell to avoid fromJSON on empty string ([#30](https://github.com/swagner-de/authentik-envoy-operator/issues/30)) ([716e500](https://github.com/swagner-de/authentik-envoy-operator/commit/716e500f32d108858ed437ba3e9f8894d14fdb9f))
+
 ## [0.2.6](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.5...v0.2.6) (2026-10-12)
 
 
