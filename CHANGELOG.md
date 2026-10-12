@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.5](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.4...v0.2.5) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** update go modules ([#27](https://github.com/swagner-de/authentik-envoy-operator/issues/27)) ([45b728d](https://github.com/swagner-de/authentik-envoy-operator/commit/45b728deec1de5584c0f649e1a727a41aa0977e6))
+
+
+### Dependencies
+
+* **deps:** update googleapis/release-please-action action to v5 ([#23](https://github.com/swagner-de/authentik-envoy-operator/issues/23)) ([9113342](https://github.com/swagner-de/authentik-envoy-operator/commit/9113342e1900cd9813b49331fba8d8481a488745))
+
 ## [0.2.4](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.3...v0.2.4) (2026-09-24)
 
 
