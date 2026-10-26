@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.8](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.7...v0.2.8) (2026-10-26)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/envoyproxy/gateway to v1.9.3 ([#33](https://github.com/swagner-de/authentik-envoy-operator/issues/33)) ([3523b8b](https://github.com/swagner-de/authentik-envoy-operator/commit/3523b8b7e15616669a568d3f80b56b50763f0796))
+
 ## [0.2.7](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.6...v0.2.7) (2026-10-12)
 
 
