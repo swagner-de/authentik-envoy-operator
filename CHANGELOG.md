@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.9...v0.2.10) (2026-11-04)
+
+
+### Dependencies
+
+* **deps:** update sigstore/cosign-installer action to v4.1.3 ([#38](https://github.com/swagner-de/authentik-envoy-operator/issues/38)) ([0f56918](https://github.com/swagner-de/authentik-envoy-operator/commit/0f56918de072b40c1ebb73cc95b09758f58e9a62))
+
 ## [0.2.9](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.8...v0.2.9) (2026-10-28)
 
 
