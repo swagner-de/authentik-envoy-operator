@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.11](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.10...v0.2.11) (2026-11-10)
+
+
+### Dependencies
+
+* **deps:** update azure/setup-helm action to v5.1.0 ([#40](https://github.com/swagner-de/authentik-envoy-operator/issues/40)) ([7c3a207](https://github.com/swagner-de/authentik-envoy-operator/commit/7c3a207490df74d289653d9d0cb30a1e91f4f7e8))
+
 ## [0.2.10](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.9...v0.2.10) (2026-11-04)
 
 
