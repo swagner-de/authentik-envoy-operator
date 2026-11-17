@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.12](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.11...v0.2.12) (2026-11-17)
+
+
+### Dependencies
+
+* **deps:** update actions/setup-go action to v7.1.0 ([#42](https://github.com/swagner-de/authentik-envoy-operator/issues/42)) ([8ca06fc](https://github.com/swagner-de/authentik-envoy-operator/commit/8ca06fc9bdacc89c79ffdeeb91e78be16f8ce205))
+
 ## [0.2.11](https://github.com/swagner-de/authentik-envoy-operator/compare/v0.2.10...v0.2.11) (2026-11-10)
 
 
