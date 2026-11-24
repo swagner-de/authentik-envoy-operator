@@ -2,8 +2,8 @@ apiVersion: v2
 name: authentik-envoy-operator
 description: A Helm chart to distribute authentik-envoy-operator
 type: application
-version: 0.2.12
-appVersion: 0.2.12
+version: 0.2.13
+appVersion: 0.2.13
 keywords:
   - kubernetes
   - operator
